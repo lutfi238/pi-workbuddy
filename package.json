@@ -1,5 +1,5 @@
 {
-  "name": "pi-extension-workbuddy-ai",
+  "name": "pi-workbuddy",
   "version": "0.2.1",
   "description": "Native WorkBuddy account login and direct model provider for Pi",
   "type": "module",

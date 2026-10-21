@@ -1,4 +1,4 @@
-# pi-extension-workbuddy-ai
+# pi-workbuddy
 
 A **WorkBuddy AI** provider for [Pi](https://pi.dev), with browser-based account login and direct model access—**no separate bridge required**.
 
@@ -8,11 +8,19 @@ A **WorkBuddy AI** provider for [Pi](https://pi.dev), with browser-based account
 
 Requires Node.js ≥22.19 and Pi with native provider support. Tested with Pi CLI **1.3.0**.
 
-From this directory:
+Install the npm package after the `pi-workbuddy` release is published:
 
 ```sh
-pi -e ./extensions/workbuddy.js
+pi install npm:pi-workbuddy
 ```
+
+Until the npm release is available, or to install directly from GitHub:
+
+```sh
+pi install git:github.com/lutfi238/pi-workbuddy
+```
+
+Then start `pi`. For local development, run `pi -e ./extensions/workbuddy.js` from the repository instead. Use only one installation source to avoid loading the provider twice.
 
 Inside Pi:
 
@@ -24,7 +32,7 @@ Inside Pi:
 
 Press Escape to cancel login. Polling is limited to five minutes. You do not need to share a password or token with the agent, extract desktop credentials, install a bridge, or open a local callback port.
 
-For an optional persistent installation:
+For an optional persistent installation from a local checkout:
 
 ```sh
 pi install .
@@ -66,7 +74,7 @@ To diagnose discovery without sending a chat request:
 
 Refresh failures report safe categories such as `[http]` (HTTP status and business code), `[invalid-json]`, `[catalog-shape]`, `[catalog-empty]`, or `[catalog-filtered]` (counts by filter reason). Server messages and response bodies, model URLs, and tokens are not displayed. Do not sign in again or weaken endpoint restrictions before identifying the failure.
 
-**HTTP 400 / 12403:** catalog probes with synthetic account metadata reproduced this error when the server could not parse the client version from the User-Agent. Version 0.2.1 adds the compatibility header `CLI/unknown WorkBuddy/5.8.4 pi-extension-workbuddy-ai/0.2.1` to discovery, token refresh, and chat transport. The WorkBuddy marker identifies the inspected protocol compatibility baseline; the extension still declares its own identity. Destination-origin restrictions remain unchanged, and no desktop credentials are used. Public catalog discovery alone does not prove account-specific model access. See the [12403 investigation](research/12403-findings.md).
+**HTTP 400 / 12403:** catalog probes with synthetic account metadata reproduced this error when the server could not parse the client version from the User-Agent. Version 0.2.1 adds the compatibility header `CLI/unknown WorkBuddy/5.8.4 pi-workbuddy/0.2.1` to discovery, token refresh, and chat transport. The WorkBuddy marker identifies the inspected protocol compatibility baseline; the extension still declares its own identity. Destination-origin restrictions remain unchanged, and no desktop credentials are used. Public catalog discovery alone does not prove account-specific model access. See the [12403 investigation](research/12403-findings.md).
 
 To select the provider, run `/model` and search for `workbuddy`; selecting a model does not send a prompt. When troubleshooting with an agent, obtain explicit approval before sending quota-consuming inference requests. Never share `auth.json`, tokens, or login URLs.
 

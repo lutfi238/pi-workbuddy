@@ -14,7 +14,7 @@ test("version marker is ASCII-safe and retains the extension's own identity", ()
   assert.equal(EXTENSION_VERSION, JSON.parse(readFileSync(new URL("../package.json", import.meta.url))).version);
   assert.equal(WORKBUDDY_PROTOCOL_VERSION, "5.8.4");
   assert.match(USER_AGENT, /WorkBuddy\/\d+\.\d+\.\d+/);
-  assert.ok(USER_AGENT.includes("pi-extension-workbuddy-ai/" + EXTENSION_VERSION));
+  assert.ok(USER_AGENT.includes("pi-workbuddy/" + EXTENSION_VERSION));
   assert.doesNotMatch(USER_AGENT, /[^\x20-\x7e]/);
   assert.equal(accountHeaders(credential())["User-Agent"], USER_AGENT);
 });
@@ -51,7 +51,7 @@ test("chat transport pins the compatible version marker over the SDK's default U
   const fetch = createChatFetch({ fetch: async (_url, options) => {
     assert.equal(options.headers.get("User-Agent"), USER_AGENT);
     assert.equal(options.headers.get("X-IDE-Version"), EXTENSION_VERSION);
-    assert.equal(options.headers.get("X-IDE-Name"), "pi-extension-workbuddy-ai");
+    assert.equal(options.headers.get("X-IDE-Name"), "pi-workbuddy");
     return new Response("data: [DONE]\n\n", { headers: { "Content-Type": "text/event-stream" } });
   } });
   const response = await fetch(ORIGIN + "/v2/chat/completions", {

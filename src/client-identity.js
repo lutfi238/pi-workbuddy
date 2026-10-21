@@ -3,4 +3,4 @@
 export const EXTENSION_VERSION = "0.2.1";
 export const WORKBUDDY_PROTOCOL_VERSION = "5.8.4";
 export const USER_AGENT = "CLI/unknown WorkBuddy/" + WORKBUDDY_PROTOCOL_VERSION +
-  " pi-extension-workbuddy-ai/" + EXTENSION_VERSION;
+  " pi-workbuddy/" + EXTENSION_VERSION;

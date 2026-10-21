@@ -69,7 +69,7 @@ export function createChatFetch({ fetch: fetchImpl = globalThis.fetch, gzip = tr
     for (const [key, value] of Object.entries({
       "X-Conversation-ID": conversationId, "X-Conversation-Request-ID": requestId,
       "X-Conversation-Message-ID": requestId, "X-Request-ID": requestId,
-      "X-Agent-Intent": "craft", "X-IDE-Type": "pi", "X-IDE-Name": "pi-extension-workbuddy-ai",
+      "X-Agent-Intent": "craft", "X-IDE-Type": "pi", "X-IDE-Name": "pi-workbuddy",
       "X-IDE-Version": EXTENSION_VERSION, "X-Product": "SaaS", "X-Requested-With": "XMLHttpRequest",
       "User-Agent": USER_AGENT,
       // Conservative privacy default: do not opt prompts into model optimization.
