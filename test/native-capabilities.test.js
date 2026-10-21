@@ -6,7 +6,6 @@ import { resolveTokenLimits } from "../src/native-limits.js";
 
 const expected = [
   ["deepseek-v4.1-flash", 1048576, 393216, true],
-  ["deepseek-v4.1-flash-sg", 1048576, 393216, true],
   ["gemini-3.5-flash", 1048576, 65536, true],
   ["gemini-3.8-flash", 1048576, 65536, true],
   ["glm-5.2", 1000000, 131072, false],
@@ -34,7 +33,7 @@ for (const [id, contextWindow, maxTokens, images] of expected) {
   });
 }
 
-test("all 24 named models have reviewed references; four routing aliases remain live", () => {
+test("all 23 named models have reviewed references; four routing aliases remain live", () => {
   assert.deepEqual(vendorCapabilityIds().sort(), expected.map(row => row[0]).sort());
   for (const id of ["default-model", "fast-model", "balanced-model", "primary-model", "future-model-v999", "__proto__", "toString", "deepseek-v4.1-flash-unknown"]) {
     assert.equal(getVendorCapabilities(id), undefined);
@@ -89,4 +88,19 @@ test("mandatory reasoning and effort-specific compatibility stay model-specific"
   assert.equal(project("gemini-3.8-flash").thinkingLevelMap.minimal, null);
   assert.equal(project("kimi-k2.6").compat.supportsReasoningEffort, false);
   assert.equal(project("kimi-k2.6").compat.thinkingFormat, "deepseek");
+});
+
+test("DeepSeek -sg variants are excluded without hiding regular or unrelated models", () => {
+  const excluded = ["deepseek-v4.1-flash-sg", "deepseek-future-v9-sg", "DEEPSEEK-V9-SG", "deepseek-sg"];
+  const kept = ["deepseek-v4.1-flash", "deepseek-future-v9", "hy3-sg", "deepseek-v4.1-flash-sg-preview"];
+  const models = projectModels({ models: [...excluded, ...kept].map(id => ({ id, supportsToolCall: true })) });
+  assert.deepEqual(models.map(model => model.id), kept);
+  assert.equal(models[0].contextWindow, 1048576);
+  assert.equal(models[0].thinkingLevelMap.max, "max");
+  assert.equal(getVendorCapabilities("deepseek-v4.1-flash-sg"), undefined);
+  assert.throws(() => projectModels({ models: excluded.map(id => ({ id })) }), error => {
+    assert.equal(error.diagnosticCode, "catalog-filtered");
+    assert.equal(error.details.excluded, excluded.length);
+    return true;
+  });
 });

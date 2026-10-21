@@ -23,12 +23,15 @@ test("diagnostics unwrap causes but never echo arbitrary upstream error text or 
 
 test("catalog failures distinguish empty, malformed, and filtered catalogs safely", () => {
   for (const [input, code] of [[{}, "catalog-shape"], [{ models: [] }, "catalog-empty"],
-    [{ models: [{ id: "remote", url: "https://secret.example/?key=SECRET" }, { id: "disabled", disabled: true }] }, "catalog-filtered"]]) {
+    [{ models: [{ id: "remote", url: "https://secret.example/?key=SECRET" }, { id: "disabled", disabled: true }] }, "catalog-filtered"],
+    [{ models: [{ id: "deepseek-v4.1-flash-sg" }] }, "catalog-filtered"]]) {
     assert.throws(() => projectModels(input), error => {
       assert.equal(error.diagnosticCode, code);
       const text = describeFailure(error);
       assert.doesNotMatch(text, /secret\.example|SECRET/);
-      if (code === "catalog-filtered") {
+      if (code === "catalog-filtered" && input.models.length === 1) {
+        assert.match(text, /excluded=1/);
+      } else if (code === "catalog-filtered") {
         assert.match(text, /total=2/);
         assert.match(text, /endpoint=1/);
         assert.match(text, /disabled=1/);

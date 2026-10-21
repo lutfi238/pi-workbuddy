@@ -12,9 +12,7 @@ const deepseek = {
   efforts: ["low", "high", "max"],
   source: "https://api-docs.deepseek.com/quick_start/pricing",
 };
-// Apply the named base model's documented abilities to the regional variant too.
-// This is an optimistic name mapping, not proof of identical gateway deployments.
-add(["deepseek-v4.1-flash", "deepseek-v4.1-flash-sg"], deepseek);
+add(["deepseek-v4.1-flash"], deepseek);
 for (const id of ["gemini-3.5-flash", "gemini-3.8-flash"]) add([id], {
   contextWindow: 1048576, maxOutputTokens: 65536, images: true, reasoning: true,
   onlyReasoning: true,

@@ -1,5 +1,11 @@
 # Maximum-capability policy
 
+> Update for 0.2.2: DeepSeek IDs ending in `-sg` are intentionally excluded from
+> discovery, and the regional vendor profile has been removed. There are now 23
+> named vendor references plus four live routing aliases. The 28-model catalog
+> table and 24-profile validation below record the earlier 0.2.1 audit, not a
+> fresh catalog check for this release. Other capability policies are unchanged.
+
 ## Operator decision
 
 Use the fullest documented/advertised per-model capabilities rather than

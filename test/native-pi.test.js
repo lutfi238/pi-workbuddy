@@ -120,7 +120,7 @@ hostTest("Pi host: refresh discovers previously unknown model IDs without code c
     type: "oauth", origin: ORIGIN, access: "SYNTHETIC_ACCESS", refresh: "SYNTHETIC_REFRESH",
     expires: Date.now() + 3600000, userId: "mock-user",
   }));
-  let catalog = [{ id: "existing-model", supportsToolCall: true }];
+  let catalog = [{ id: "existing-model", supportsToolCall: true }, { id: "deepseek-v4.1-flash-sg", supportsToolCall: true }];
   let requests = 0;
   const provider = createWorkbuddyProvider({
     api: { stream() { throw new Error("Inference must not run"); }, streamSimple() { throw new Error("Inference must not run"); } },
@@ -131,10 +131,12 @@ hostTest("Pi host: refresh discovers previously unknown model IDs without code c
   const refresh = () => models.refresh({ providers: ["workbuddy"], allowNetwork: true, force: true });
   assert.equal((await refresh()).errors.size, 0);
   assert.deepEqual(models.getModels("workbuddy").map(model => model.id), ["existing-model"]);
-  catalog = [...catalog, { id: "future-model-never-bundled-v99", supportsToolCall: true, maxInputTokens: 128000 }];
+  catalog = [...catalog, { id: "future-model-never-bundled-v99", supportsToolCall: true, maxInputTokens: 128000 },
+    { id: "deepseek-future-v99-sg", supportsToolCall: true }];
   assert.equal((await refresh()).errors.size, 0);
   assert.ok((await models.getAvailable("workbuddy")).some(model => model.id === "future-model-never-bundled-v99"));
   assert.equal(models.getModel("workbuddy", "future-model-never-bundled-v99").contextWindow, 128000);
+  assert.deepEqual(models.getModels("workbuddy").map(model => model.id), ["existing-model", "future-model-never-bundled-v99"]);
   await models.refresh({ providers: ["workbuddy"], allowNetwork: false });
   assert.equal(requests, 2, "offline refresh must not make discovery requests");
 });

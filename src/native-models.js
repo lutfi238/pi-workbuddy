@@ -14,10 +14,12 @@ export function projectModels(config) {
   const seen = new Set();
   const models = [];
   const counts = { total: config.models.length, accepted: 0, invalid: 0, duplicate: 0,
-    disabled: 0, toolLess: 0, endpoint: 0, unavailable: 0 };
+    disabled: 0, toolLess: 0, endpoint: 0, unavailable: 0, excluded: 0 };
   for (const item of config.models) {
     // Report only counts, never model URLs, API keys, remote instructions, or full catalog bodies.
     if (!validId(item?.id)) { counts.invalid++; continue; }
+    const normalizedId = item.id.toLowerCase();
+    if (normalizedId.startsWith("deepseek-") && normalizedId.endsWith("-sg")) { counts.excluded++; continue; }
     if (seen.has(item.id)) { counts.duplicate++; continue; }
     if (item.disabled === true) { counts.disabled++; continue; }
     if (item.supportsToolCall === false) { counts.toolLess++; continue; }
