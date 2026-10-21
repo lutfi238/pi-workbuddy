@@ -18,8 +18,8 @@ Inside Pi:
 
 1. Run `/login` and select **WorkBuddy AI**.
 2. Complete the login yourself in the browser using the URL displayed by Pi.
-3. After signing in, run `/workbuddy refresh`.
-4. Run `/model` and select a model from the `workbuddy` provider.
+3. Run `/model`; Pi refreshes model catalogs in the background. Wait for the refresh to finish, then select a model from the `workbuddy` provider.
+4. If you need to force discovery or diagnose a failure, run `/workbuddy refresh`.
 5. Send a prompt. Chat requests consume your WorkBuddy account quota.
 
 Press Escape to cancel login. Polling is limited to five minutes. You do not need to share a password or token with the agent, extract desktop credentials, install a bridge, or open a local callback port.
@@ -40,9 +40,17 @@ Use `/reload` after updating a loaded extension. To sign out, run `/logout` and 
 | `/logout` → WorkBuddy AI | Remove Pi's local WorkBuddy credentials |
 | `/workbuddy status` or `/workbuddy doctor` | Show local configuration, catalog source, active model, and the last sanitized catalog error; no network requests |
 | `/workbuddy refresh` | Fetch the authenticated catalog, refreshing the token if needed |
-| `/model` | Select a model after signing in |
+| `/model` | Refresh model catalogs in the background and select a model |
 
 Before discovery, the provider includes conservative fallback metadata for `default-model`. Models are not listed as available until authentication is configured. If discovery fails, the last known catalog is retained **in memory**; it is not persisted across restarts. Pi may invoke discovery during its refresh lifecycle, but the extension factory does not make network requests when loaded.
+
+### Automatic model discovery
+
+There is no hardcoded allowlist of WorkBuddy model IDs. The provider fetches `/v3/config` with the signed-in account and projects compatible model entries into Pi. In Pi 1.3.0, opening `/model` refreshes provider catalogs in the background and updates the picker when discovery finishes. Pi also refreshes catalogs after login; `/workbuddy refresh` is the explicit manual override.
+
+A newly advertised model can therefore appear without changing the extension or adding its ID manually. The model must pass the existing compatibility and security filters: disabled models, models explicitly lacking tool support, and custom endpoints/protocols/API keys are excluded. Catalog visibility does not guarantee that your account can run every listed model.
+
+This is refresh-based discovery, not a realtime push subscription or continuous idle polling. Reopen `/model` to check for additions during a long session. Offline mode does not fetch new catalogs. Extension updates may still be necessary if WorkBuddy changes its API, authentication, metadata schema, or wire protocol.
 
 ### Login succeeds, but discovery fails or Codex remains selected
 
@@ -70,8 +78,24 @@ To select the provider, run `/model` and search for `workbuddy`; selecting a mod
 - **Chat:** `POST https://www.workbuddy.ai/v2/chat/completions`.
 - **Transport:** gzip requests, SSE framing and UTF-8 normalization, repeated or missing tool-call ID handling, usage tails, and cancellation.
 - **Message conversion and streaming:** delegated to Pi's built-in OpenAI Chat Completions implementation. Payload, response, and provider-event hooks are forwarded.
-- **Metadata:** context and output limits, reasoning efforts, image input, and sampling settings are projected from the catalog. Disabled models, models without tool support, and custom model URLs, protocols, or API keys are excluded.
+- **Metadata:** live catalog metadata is supplemented with reviewed official vendor specifications for 24 named models. Context/output use the largest documented or advertised values, not smaller catalog defaults. Image support and reasoning efforts are additive. Routing aliases and newly discovered IDs remain catalog-driven; the reference table is not an allowlist. Disabled models, models without tool support, and custom model URLs, protocols, or API keys are excluded.
 - **Pricing:** model prices are set to zero because USD token rates are unknown—**this does not mean usage is free**. WorkBuddy's `usage.credit` field is not included in Pi's cost accounting; token usage is still processed.
+
+### Context and output budgets
+
+The default policy is **documented maximum capabilities**, not a conservative gateway-default policy. Context uses the largest positive safe integer among the catalog's input limit, configured context default, supported context lengths, and reviewed vendor context reference. Output similarly uses the larger catalog/vendor maximum, bounded by the shared context budget. Smaller catalog defaults do not reduce these maxima, and a larger live value is never reduced by an older vendor reference.
+
+For example, DeepSeek V4.1 Flash now advertises **1,048,576 context tokens**, **393,216 maximum output tokens**, image input, and **low/high/max** thinking. It no longer stays at the catalog's 300K default. Explicitly named regional/preview variants use their base-model references optimistically; identical gateway deployments are not guaranteed. Four routing aliases retain their own live metadata instead of inheriting an invented vendor identity.
+
+Image support is enabled when either WorkBuddy or the reviewed vendor reference advertises it, even if gateway metadata disables multimodal input. Supported reasoning efforts combine both sources. Known mandatory-thinking models cannot turn thinking off; Kimi K2.6 uses a thinking toggle rather than an unsupported vendor `reasoning_effort` parameter. Pi exposes text/image input, not every vendor-native audio, video, or hosted-tool feature.
+
+Fallbacks of 32,768 context / 4,096 output apply **only when neither source supplies the corresponding usable limit**. `maxAllowedSize` remains excluded because its units are unverified. Output is never added to input to invent a larger context. Rounded vendor notation such as 1M or 256K is normalized decimally where no exact integer is published; exact documented integers are used when available. Kimi completion ceilings share context with input; they are not independent additional output capacity. Grok's unspecified finite output cap and Kimi K2.8's unpublished output maximum retain the catalog value.
+
+Smaller explicit output requests remain supported; sampling and payload hooks cannot exceed the resulting model maximum or bypass Pi's remaining-context adjustment. Normal Pi `streamSimple` requests additionally fit output to estimated remaining context, including Pi 1.3.0's 4,096-token safety margin. This is distinct from the default 16,384-token compaction reserve. Full API `stream` callers still own input/remaining-context budgeting.
+
+**Optimistic does not mean live-verified:** vendor API limits/features may differ from WorkBuddy routing, account access, or gateway protocol support. OpenAI's native GPT-6 tool/endpoint restrictions, for example, do not establish whether WorkBuddy translates its own chat endpoint. Models are not disabled preemptively for this uncertainty. Actual errors should drive targeted compatibility fixes, rather than blanket reductions. There is no automatic downgrade, retry with another model, or quota-consuming capability probe.
+
+See the current [capability policy](research/capability-policy.md), [vendor references](research/vendor-capability-comparison.md), and historical [context-limit audit](research/context-limit-audit.md). No global Pi compaction settings are changed by the extension.
 
 ### Native configuration
 
@@ -155,7 +179,8 @@ Host tests cover coordinated login, storage and refresh, tool-call/result round 
 Local investigation notes:
 [authentication](research/workbuddy-auth-findings.md) ·
 [chat protocol](research/workbuddy-protocol-findings.md) ·
-[error 12403](research/12403-findings.md).
+[error 12403](research/12403-findings.md) ·
+[context-limit audit](research/context-limit-audit.md).
 
 These notes are not included in the npm tarball. Raw third-party snapshots and generated evidence remain local and are excluded from Git; they are preserved verbatim rather than translated so their provenance and hashes remain valid. The authored documentation, code comments, user-facing messages, and test fixtures use English. Emoji in test fixtures intentionally exercise Unicode streaming.
 

@@ -2,17 +2,38 @@ import { createNativeClient, accountHeaders, BASE_URL } from "./native-client.js
 import { fallbackModels, projectModels } from "./native-models.js";
 import { createChatFetch } from "./native-transport.js";
 import { describeFailure } from "./native-errors.js";
+import { resolveOutputLimit, capPayloadOutput } from "./native-limits.js";
 
 export function createWorkbuddyProvider({ api, client = createNativeClient(), fetch: fetchImpl, gzip = true } = {}) {
   if (!api?.stream || !api?.streamSimple) throw new Error("Pi OpenAI streaming API is required.");
   let models = fallbackModels();
   let catalogSource = "fallback";
   let lastCatalogError;
-  function optionsFor(model, options = {}) {
+  function prepareRequest(model, options = {}) {
+    let outputLimit = resolveOutputLimit(model, options.maxTokens);
+    const modelSampling = model.samplingParams ? { ...model.samplingParams } : undefined;
+    const requestSampling = options.samplingParams ? { ...options.samplingParams } : undefined;
+    for (const params of [modelSampling, requestSampling]) {
+      if (!params) continue;
+      for (const key of ["max_tokens", "max_completion_tokens"]) {
+        if (params[key] !== undefined) outputLimit = resolveOutputLimit({ ...model, maxTokens: outputLimit }, params[key]);
+        delete params[key];
+      }
+    }
     return {
-      ...options, maxTokens: options.maxTokens ?? model.maxTokens,
-      maxRetries: options.maxRetries ?? 0, timeoutMs: options.timeoutMs ?? 120000,
-      fetch: createChatFetch({ fetch: options.fetch ?? fetchImpl, gzip, sessionId: options.sessionId }),
+      model: { ...model, baseUrl: BASE_URL, samplingParams: modelSampling },
+      options: {
+        ...options, maxTokens: outputLimit, samplingParams: requestSampling,
+        maxRetries: options.maxRetries ?? 0, timeoutMs: options.timeoutMs ?? 120000,
+        fetch: createChatFetch({ fetch: options.fetch ?? fetchImpl, gzip, sessionId: options.sessionId }),
+        async onPayload(payload, wireModel) {
+          // Preserve Pi streamSimple's remaining-context clamp before invoking caller hooks.
+          const bounded = capPayloadOutput(payload, outputLimit);
+          const ceiling = bounded.max_tokens;
+          const replacement = await options.onPayload?.(bounded, wireModel);
+          return capPayloadOutput(replacement === undefined ? bounded : replacement, ceiling);
+        },
+      },
     };
   }
   return {
@@ -42,8 +63,14 @@ export function createWorkbuddyProvider({ api, client = createNativeClient(), fe
         throw error;
       }
     },
-    stream: (model, context, options) => api.stream({ ...model, baseUrl: BASE_URL }, context, optionsFor(model, options)),
-    streamSimple: (model, context, options) => api.streamSimple({ ...model, baseUrl: BASE_URL }, context, optionsFor(model, options)),
+    stream(model, context, options) {
+      const request = prepareRequest(model, options);
+      return api.stream(request.model, context, request.options);
+    },
+    streamSimple(model, context, options) {
+      const request = prepareRequest(model, options);
+      return api.streamSimple(request.model, context, request.options);
+    },
   };
 }
 

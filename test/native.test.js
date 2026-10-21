@@ -106,7 +106,8 @@ test("catalog projection excludes external endpoints, disabled and tool-less mod
     { id: "notools", supportsToolCall: false }, { id: "hy3" }, { id: "key", apiKey: "SECRET" },
   ], prompts: [{ malicious: true }] });
   assert.equal(models.length, 1);
-  assert.equal(models[0].contextWindow, 192000);
+  assert.equal(models[0].contextWindow, 1000000);
+  assert.equal(models[0].maxTokens, 128000); // Vendor maximum supplements the smaller gateway output default.
   assert.equal(models[0].baseUrl, BASE_URL);
   assert.equal(models[0].thinkingLevelMap.off, null);
   assert.equal(models[0].thinkingLevelMap.medium, null);
@@ -134,7 +135,7 @@ test("provider refresh uses generation-checked publication and retains last-good
   await provider.refreshModels({ ...context, allowNetwork: false });
 });
 
-test("native stream delegates hooks, fixes endpoint, and installs guarded fetch", () => {
+test("native stream delegates hooks, fixes endpoint, and installs guarded fetch", async () => {
   const marker = {};
   let captured;
   const api = { stream(...args) { captured = args; return marker; }, streamSimple(...args) { captured = args; return marker; } };
@@ -143,7 +144,7 @@ test("native stream delegates hooks, fixes endpoint, and installs guarded fetch"
   const options = { apiKey: "ACCESS", onPayload: hook, onResponse: hook, onProviderStreamEvent: hook, signal: AbortSignal.abort() };
   assert.equal(provider.streamSimple({ ...provider.getModels()[0], baseUrl: "https://evil.example" }, {}, options), marker);
   assert.equal(captured[0].baseUrl, BASE_URL);
-  assert.equal(captured[2].onPayload, hook);
+  assert.equal((await captured[2].onPayload({ max_tokens: 999999 }, captured[0])).max_tokens, 4096);
   assert.equal(captured[2].onResponse, hook);
   assert.equal(captured[2].onProviderStreamEvent, hook);
   assert.equal(captured[2].signal, options.signal);

@@ -1,8 +1,9 @@
 import { BASE_URL } from "./native-client.js";
 import { WorkbuddyError } from "./native-errors.js";
+import { resolveTokenLimits } from "./native-limits.js";
+import { getVendorCapabilities } from "./native-capabilities.js";
 const COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 const LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"];
-const validInt = value => Number.isSafeInteger(value) && value > 0;
 const validId = value => typeof value === "string" && value.length <= 256 && /^[\w./:-]+$/.test(value);
 
 export function projectModels(config) {
@@ -23,19 +24,22 @@ export function projectModels(config) {
     if (item.url || item.apiKey || item.useCustomProtocol) { counts.endpoint++; continue; }
     if (available && !available.has(item.id)) { counts.unavailable++; continue; }
     seen.add(item.id);
-    const contextWindow = [item.contextWindow?.defaultLength, item.maxAllowedSize, item.maxInputTokens].find(validInt) ?? 32768;
-    const maxTokens = Math.min(validInt(item.maxOutputTokens) ? item.maxOutputTokens : 4096, contextWindow);
-    const reasoning = item.supportsReasoning === true;
-    const efforts = item.reasoning?.supportedEfforts?.filter?.(effort => LEVELS.includes(effort));
-    const onlyReasoning = item.onlyReasoning === true || item.reasoning?.canDisableThinking === false;
+    const vendor = getVendorCapabilities(item.id) ?? {};
+    const { contextWindow, maxTokens } = resolveTokenLimits(item, vendor);
+    const reasoning = item.supportsReasoning === true || vendor.reasoning === true;
+    const catalogEfforts = Array.isArray(item.reasoning?.supportedEfforts) ? item.reasoning.supportedEfforts : [];
+    const efforts = [...new Set([...catalogEfforts, ...(vendor.efforts ?? [])].filter(effort => LEVELS.includes(effort)))];
+    const onlyReasoning = item.onlyReasoning === true || item.reasoning?.canDisableThinking === false || vendor.onlyReasoning === true;
     const thinkingLevelMap = reasoning ? {
-      ...(onlyReasoning ? { off: null } : {}),
+      ...(onlyReasoning ? { off: null } : vendor.off ? { off: vendor.off } : {}),
       ...(efforts?.length ? Object.fromEntries(LEVELS.map(level => [level, efforts.includes(level) ? level : null])) : {}),
     } : undefined;
     models.push({
       id: item.id, name: typeof item.name === "string" ? item.name.slice(0, 256) : item.id,
       provider: "workbuddy", api: "openai-completions", baseUrl: BASE_URL,
-      reasoning, input: item.supportsImages === true && item.disabledMultimodal !== true ? ["text", "image"] : ["text"],
+      // Prefer availability: retain gateway image support even when the vendor is text-only,
+      // and expose vendor-advertised image support even if gateway metadata omits/disables it.
+      reasoning, input: item.supportsImages === true || vendor.images === true ? ["text", "image"] : ["text"],
       cost: { ...COST }, contextWindow, maxTokens,
       ...(thinkingLevelMap ? { thinkingLevelMap } : {}),
       samplingParams: {
@@ -43,7 +47,10 @@ export function projectModels(config) {
         ...(Number.isFinite(item.top_p) ? { top_p: item.top_p } : {}),
       },
       // Observed in the shipped SDK: system role and max_tokens; never infer from model names.
-      compat: { supportsDeveloperRole: false, maxTokensField: "max_tokens", supportsStore: false, supportsReasoningEffort: reasoning },
+      compat: { supportsDeveloperRole: false, maxTokensField: "max_tokens", supportsStore: false,
+        supportsReasoningEffort: reasoning && (vendor.supportsReasoningEffort !== false || catalogEfforts.length > 0),
+        ...(vendor.thinkingFormat ? { thinkingFormat: vendor.thinkingFormat } : {}),
+      },
     });
   }
   if (!models.length) throw new WorkbuddyError(config.models.length ? "catalog-filtered" : "catalog-empty",
