@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.*
+!.env.example
+coverage/
+
+# Local Pi state and generated package archives.
+.pi/
+*.tgz
+
+# Preserve raw third-party research artifacts locally, outside version control.
+research/*snapshot/
+research/*evidence.json
+research/*source*.json

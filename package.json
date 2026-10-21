@@ -1,0 +1,42 @@
+{
+  "name": "pi-extension-workbuddy-ai",
+  "version": "0.2.1",
+  "description": "Native WorkBuddy account login and direct model provider for Pi",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lutfi238/pi-workbuddy.git"
+  },
+  "homepage": "https://github.com/lutfi238/pi-workbuddy#readme",
+  "bugs": {
+    "url": "https://github.com/lutfi238/pi-workbuddy/issues"
+  },
+  "keywords": [
+    "pi-package",
+    "workbuddy",
+    "pi-extension"
+  ],
+  "files": [
+    "extensions",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/workbuddy.js"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "test": "node --test",
+    "check": "node scripts/check.mjs"
+  }
+}
