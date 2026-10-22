@@ -1,6 +1,7 @@
 import { openAICompletionsApi } from "@earendil-works/pi-ai/compat";
 import bridge from "../src/bridge-extension.js";
 import { createWorkbuddyProvider, registerNativeCommands } from "../src/native-provider.js";
+import { registerNativeLifecycle } from "../src/native-lifecycle.js";
 
 export default async function workbuddy(pi) {
   const mode = process.env.WORKBUDDY_MODE || "native";
@@ -12,4 +13,5 @@ export default async function workbuddy(pi) {
   const provider = createWorkbuddyProvider({ api: openAICompletionsApi(), gzip: process.env.WORKBUDDY_GZIP !== "0" });
   pi.registerProvider(provider);
   registerNativeCommands(pi, provider);
+  registerNativeLifecycle(pi, provider);
 }

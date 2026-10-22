@@ -6,15 +6,15 @@ A **WorkBuddy AI** provider for [Pi](https://pi.dev), with browser-based account
 
 ## Getting started
 
-Requires Node.js ≥22.19 and Pi with native provider support. Tested with Pi CLI **1.3.0**.
+Requires Node.js ≥22.19 and Pi with native provider support. Tested with Pi CLI **1.3.0** and Pendant 0.41.0's bundled Pi SDK **1.2.0**.
 
-Install the npm package after the `pi-workbuddy` release is published:
+Install the published npm package:
 
 ```sh
 pi install npm:pi-workbuddy
 ```
 
-Until the npm release is available, or to install directly from GitHub:
+Or install directly from GitHub:
 
 ```sh
 pi install git:github.com/lutfi238/pi-workbuddy
@@ -50,7 +50,7 @@ Use `/reload` after updating a loaded extension. To sign out, run `/logout` and 
 | `/workbuddy refresh` | Fetch the authenticated catalog, refreshing the token if needed |
 | `/model` | Refresh model catalogs in the background and select a model |
 
-Before discovery, the provider includes conservative fallback metadata for `default-model`. Models are not listed as available until authentication is configured. If discovery fails, the last known catalog is retained **in memory**; it is not persisted across restarts. Pi may invoke discovery during its refresh lifecycle, but the extension factory does not make network requests when loaded.
+Before discovery or cache restoration, the provider includes fallback metadata for `default-model`. Models are not available until authentication is configured. Successful catalogs are persisted through **Pi's model store** as projected public metadata, scoped by a hash of the account origin/user/domain/tenant (never access or refresh tokens). Cached models are revalidated on restoration, including removal of DeepSeek `-sg` variants. A failed refresh retains the last known catalog. The extension factory itself makes no network requests.
 
 ### Automatic model discovery
 
@@ -58,7 +58,19 @@ There is no hardcoded allowlist of WorkBuddy model IDs. The provider fetches `/v
 
 A newly advertised model can therefore appear without changing the extension or adding its ID manually. The model must pass the existing compatibility and security filters: disabled models, models explicitly lacking tool support, and custom endpoints/protocols/API keys are excluded. Starting with 0.2.2, DeepSeek variants ending in `-sg` are intentionally excluded, including after catalog refresh; the regular DeepSeek models remain available. Catalog visibility does not guarantee that your account can run every listed model.
 
-This is refresh-based discovery, not a realtime push subscription or continuous idle polling. Reopen `/model` to check for additions during a long session. Offline mode does not fetch new catalogs. Extension updates may still be necessary if WorkBuddy changes its API, authentication, metadata schema, or wire protocol.
+A `session_start` hook refreshes only WorkBuddy using the registry's default network policy and honors `PI_OFFLINE` (also set by Pi CLI `--offline`). This covers embedded hosts that re-register a provider but do not refetch an already-seen provider ID. Offline provider refreshes can restore a matching cached catalog without network access.
+
+This is refresh-based discovery, not a realtime push subscription or continuous idle polling. Reopen `/model` to check for additions during a long session. Extension updates may still be necessary if WorkBuddy changes its API, authentication, metadata schema, or wire protocol.
+
+### Pendant / VS Code stays on WorkBuddy Default (fallback)
+
+Version **0.2.3** restores cached catalogs after provider re-registration and refreshes WorkBuddy at session startup. It also replaces an active bootstrap fallback with fresh metadata for the same ID. For resumed sessions, it reads only the latest model-change record; a removed DeepSeek `-sg` selection is restored to its exact non-SG counterpart if available. It does not change another provider, overwrite a newer observed selection, edit global defaults, or send a chat request. `/workbuddy refresh` also repairs stale active-model metadata.
+
+After the 0.2.3 release is published, update the package used by the host and reload the session. Restarting an old installed copy will not pick up repository changes. `/workbuddy doctor` reports the loaded extension version and `catalog=fallback`, `cache`, or `remote`; share only this sanitized diagnostic, never credentials. A genuine network/authentication error with no usable cache still requires resolving the error; no fabricated catalog is substituted.
+
+### Package published, but absent from gallery search
+
+The [direct package page](https://pi.dev/packages/pi-workbuddy) can work before the searchable gallery includes the package. npm publication and Pi gallery discovery are separate. Confirm the public npm version and the `pi-package` keyword before assuming a publishing failure. See the [reported npm-search discovery issue](https://github.com/earendil-works/pi/issues/7885). Do not repeatedly publish identical releases just to try to trigger gallery indexing.
 
 ### Login succeeds, but discovery fails or Codex remains selected
 
@@ -182,13 +194,23 @@ npm test
 node scripts/smoke-cli.mjs "C:/path/to/pi-coding-agent/dist/bundle/cli.js"
 ```
 
+To additionally test against an installed Pendant bundle (no live credentials or inference):
+
+```powershell
+$env:PI_SDK_TEST_PATH = "C:/path/to/pendant/dist/pi-sdk.cjs"
+npm test
+```
+
+Pendant integration tests instantiate its actual `ModelRuntime`, resource services, session manager, and `session_start` bindings. They cover provider re-registration, offline cache restoration in a fresh runtime, startup fallback repair, and migration of a saved DeepSeek SG selection. Cache tests cover account isolation, secret/endpoint stripping, malformed entries, failed refreshes, and generation rejection.
+
 Host tests cover coordinated login, storage and refresh, tool-call/result round trips, reasoning, Unicode, usage tails, instrumentation, empty and truncated streams, errors, and cancellation. The CLI smoke test uses an offline temporary profile with synthetic credentials and removes it afterward. **None of these automated tests sends a prompt to the live WorkBuddy service.**
 
 Local investigation notes:
 [authentication](research/workbuddy-auth-findings.md) ·
 [chat protocol](research/workbuddy-protocol-findings.md) ·
 [error 12403](research/12403-findings.md) ·
-[context-limit audit](research/context-limit-audit.md).
+[context-limit audit](research/context-limit-audit.md) ·
+[Pendant recovery and gallery findings](research/pendant-recovery-findings.md).
 
 These notes are not included in the npm tarball. Raw third-party snapshots and generated evidence remain local and are excluded from Git; they are preserved verbatim rather than translated so their provenance and hashes remain valid. The authored documentation, code comments, user-facing messages, and test fixtures use English. Emoji in test fixtures intentionally exercise Unicode streaming.
 

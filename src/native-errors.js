@@ -15,6 +15,7 @@ const REASONS = {
   "envelope": "The JSON response envelope was unexpected.",
   "catalog-shape": "The response did not contain a supported models array.",
   "catalog-empty": "The server returned an empty model list.",
+  "catalog-cache": "Cached model metadata was rejected; refresh to rebuild the catalog.",
   "catalog-filtered": "No model passed the provider's compatibility/security filters.",
 };
 export class WorkbuddyError extends Error {

@@ -1,6 +1,6 @@
 {
   "name": "pi-workbuddy",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Native WorkBuddy account login and direct model provider for Pi",
   "type": "module",
   "license": "MIT",
