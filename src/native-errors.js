@@ -16,6 +16,11 @@ const REASONS = {
   "catalog-shape": "The response did not contain a supported models array.",
   "catalog-empty": "The server returned an empty model list.",
   "catalog-cache": "Cached model metadata was rejected; refresh to rebuild the catalog.",
+  "credits-shape": "WorkBuddy returned unsupported credit-summary metadata.",
+  "credits-request": "WorkBuddy credits could not be refreshed.",
+  "credits-offline": "No cached WorkBuddy credits are available while offline.",
+  "credits-scope": "The verified credit reader supports personal WorkBuddy accounts only.",
+  "credits-busy": "Too many WorkBuddy credit reads are in progress; retry shortly.",
   "catalog-filtered": "No model passed the provider's compatibility/security filters.",
 };
 export class WorkbuddyError extends Error {

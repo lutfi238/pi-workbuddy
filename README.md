@@ -48,6 +48,7 @@ Use `/reload` after updating a loaded extension. To sign out, run `/logout` and 
 | `/logout` → WorkBuddy AI | Remove Pi's local WorkBuddy credentials |
 | `/workbuddy status` or `/workbuddy doctor` | Show local configuration, catalog source, active model, and the last sanitized catalog error; no network requests |
 | `/workbuddy refresh` | Fetch the authenticated catalog, refreshing the token if needed |
+| `/workbuddy-tooltip on/off/refresh/status` | Experimental opt-in credit relay; requires the separately reviewed Pendant host adapter |
 | `/model` | Refresh model catalogs in the background and select a model |
 
 Before discovery or cache restoration, the provider includes fallback metadata for `default-model`. Models are not available until authentication is configured. Successful catalogs are persisted through **Pi's model store** as projected public metadata, scoped by a hash of the account origin/user/domain/tenant (never access or refresh tokens). Cached models are revalidated on restoration, including removal of DeepSeek `-sg` variants. A failed refresh retains the last known catalog. The extension factory itself makes no network requests.
@@ -117,6 +118,40 @@ Smaller explicit output requests remain supported; sampling and payload hooks ca
 
 See the current [capability policy](research/capability-policy.md), [vendor references](research/vendor-capability-comparison.md), and historical [context-limit audit](research/context-limit-audit.md). No global Pi compaction settings are changed by the extension.
 
+### Read-only credit-reader backend
+
+Version **0.2.4** adds `createCreditsReader()` in `src/native-credits.js` for the verified personal-account endpoint `POST /billing/meter/get-user-resource-summary` with body `{}`. The reader itself does not run automatically. An opt-in experimental Pendant relay/adapter is available separately below; no installed host is modified automatically.
+
+The reader returns `creditsTotal`, `creditsRemaining`, `creditsUsed`, `packageCount`, and `fetchedAt`; optional `planCode`, `planName`, and `isPaidUser` are included only when supplied with the expected types. Invalid/missing numeric fields stay `null`, not zero. The default client also returns immutable `packageDetails` (`state`, `count`, `items`) from the verified paid/free package read routes. Each resource has a reviewed kind, precise total/remaining/used credits, and its own supplied expiry. Different grants of the same product stay separate. Missing dates stay unknown; offset-less dates retain an explicit server-time label. `packageCount` is the legacy summary-group count, not necessarily the number of individual grants. No subscription renewal date, USD value, or allowance is inferred. The account balance is not a separate allowance for each model.
+
+```js
+import { createCreditsReader } from "./src/native-credits.js";
+
+const reader = createCreditsReader();
+// credential is the current WorkBuddy OAuth credential supplied by the caller's Pi auth flow.
+const result = await reader.read(credential, { signal });
+// result.source: "remote" or "cache"; result.stale explicitly marks old/failed-refresh data.
+await reader.read(credential, { signal, force: true });
+await reader.read(credential, { allowNetwork: false });
+reader.clear(); // Required when a future UI/controller logs out or disposes this reader.
+```
+
+The default cache TTL is **60 seconds**, with at most **8 account scopes** and **8 concurrent underlying reads**. Cache keys use hashed account identity/domain, never tokens. Token rotation retains the same account cache. Cache entries are memory-only and are never added to the persistent model catalog. Callers receive independent snapshots; repeated concurrent reads share one bounded read job. A fresh job reads the summary and relevant paid/free package pages, at most ten pages of 200 records per route, under a shared detail deadline. Detail failures are explicitly partial/unavailable and do not make old details look fresh. Cancelling one caller leaves other subscribers running; cancelling the last caller or clearing the reader aborts the request and prevents late cache writes.
+
+Transient failures may return last-good data with `stale: true` and a sanitized `error`. Authentication/business denials discard the balance rather than returning stale data. Offline reads and `PI_OFFLINE` never trigger a fetch; without a matching cached value they report unavailable. `force` bypasses freshness, not offline policy. `ttlMs` and `maxEntries` can be configured when constructing the reader.
+
+This layer never performs login or token refresh itself: its caller must supply current Pi-owned credentials. It never claims rewards, buys credits, changes subscriptions, or sends chat. The enterprise usage route has not been verified and is deliberately not substituted with a potentially misleading personal balance; enterprise-scoped calls report unsupported for now. See [endpoint verification](research/credits-endpoint-verification.md) and [tooltip findings](research/model-tooltip-findings.md) for integration boundaries.
+
+### Optional Pendant credit tooltip (experimental)
+
+The exact native model-hover integration requires a host adapter in Pendant **0.41.0**, not just provider metadata. See [the preparation/review guide](integrations/pendant/README.md). The included `prepare.mjs` validates the inspected host version and hash, checks JavaScript syntax, and produces separate modified renderer/broker copies and a manifest. It **never applies** that copy to your installed VS Code extension. Generated vendor bundles are not shipped in npm or committed to Git.
+
+After an explicitly approved adapter installation, `/workbuddy-tooltip on` enables a session-scoped credit relay over Pi's normal status API. The adapter consumes that reserved payload inside the existing native model tooltip instead of displaying an extra status badge. `/workbuddy-tooltip refresh`, `status`, and `off` manage the relay. It is disabled by default; normal CLI behavior is unchanged. Do not enable it in an unpatched host. Persistent opt-in after installing the adapter uses `WORKBUDDY_PENDANT_TOOLTIP=1` in the host process environment.
+
+Adapter v2 also fixes Pendant's default `extensionStatus.surface=off` transport gate: it forwards only the reserved WorkBuddy payload while leaving other status visibility and user settings unchanged. It hides the encoded transport from VS Code's separate status bar. Install both prepared host bundles and use **Developer: Reload Window**; Pi `/reload` alone does not reload the host broker. `/workbuddy-tooltip status` reports whether the relay payload is waiting, loading, ready, or unavailable without querying credits.
+
+Rows show a remaining-credit summary, then separate base/bonus/top-up grants with `remaining / total left` and each grant's expiry, plus update time, optional plan name, and stale/partial markers. At most four grants are previewed (base/daily first, then earliest known expiry); omitted loaded grants have an explicit count. Without usable details, aggregate used/total and credit-group count remain as a labeled fallback. Fresh remaining credits, including each grant, reuse the native OpenAI color thresholds: green at ≥50%, yellow at 15–<50%, red below 15%. Unknown or stale balances are not painted as current healthy quota; other model/account rows stay neutral. No ChatGPT five-hour/weekly allowances, renewal dates, percentages, or USD values are fabricated. Read events use the private reader's cache and cancellation; hovering does not send a chat or start repeated network requests. Tokens and account identity never cross into the webview. Isolated tests cover the patched renderer and the actual shipped SDK transport. The operator also confirmed the native hover, colors, individual grants, and expiry dates visually in the backed-up local Pendant 0.41.0 preview. That confirmation does not establish compatibility with other host versions.
+
 ### Native configuration
 
 ```powershell
@@ -136,7 +171,7 @@ The `.env.example` file is a reference only: Pi and this extension do **not** au
 
 - Pi stores credentials in its agent profile (`auth.json`), not in the project. Protect that file; never commit or share it.
 - The extension does not read the desktop application's credentials, databases, cookies, or sessions.
-- Authentication, discovery, and chat requests target only the HTTPS origin `www.workbuddy.ai`; HTTP redirects are rejected. Recognized production WorkBuddy/CodeBuddy account domains are used only as header values, not destination URLs.
+- Authentication, discovery, credit reads, and chat requests target only the HTTPS origin `www.workbuddy.ai`; HTTP redirects are rejected. Recognized production WorkBuddy/CodeBuddy account domains are used only as header values, not destination URLs.
 - Browser login URLs must use recognized production WorkBuddy/CodeBuddy origins. Login URLs can contain sensitive state; do not share them or screenshots containing them.
 - Remote configuration cannot import prompts, tools, commands, credentials, or model URLs into this extension. Discovery does not send a list of repositories.
 - `X-Private-Data: true` is a conservative privacy default, **not a guarantee** of the server's retention policy.

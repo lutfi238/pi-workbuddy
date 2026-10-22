@@ -8,6 +8,9 @@ coverage/
 .pi/
 *.tgz
 
+# Generated optional Pendant adapter copies (vendor bundles are never published).
+integrations/pendant/generated/
+
 # Preserve raw third-party research artifacts locally, outside version control.
 research/*snapshot/
 research/*evidence.json

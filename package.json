@@ -1,6 +1,6 @@
 {
   "name": "pi-workbuddy",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Native WorkBuddy account login and direct model provider for Pi",
   "type": "module",
   "license": "MIT",
@@ -20,6 +20,8 @@
   "files": [
     "extensions",
     "src",
+    "integrations/pendant/prepare.mjs",
+    "integrations/pendant/README.md",
     "README.md",
     "LICENSE"
   ],

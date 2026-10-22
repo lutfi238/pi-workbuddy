@@ -1,6 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { WorkbuddyError } from "./native-errors.js";
 import { USER_AGENT } from "./client-identity.js";
+import { readCreditPackages } from "./native-credit-packages.js";
 
 export const ORIGIN = "https://www.workbuddy.ai";
 export const BASE_URL = ORIGIN + "/v2";
@@ -88,7 +89,7 @@ export function createNativeClient({
   fetch: fetchImpl = globalThis.fetch, requestTimeoutMs = 15000,
   loginTimeoutMs = 300000, pollIntervalMs = 1000, now = Date.now,
 } = {}) {
-  async function request(path, { method = "GET", credential, signal, pendingCode, headers = {} } = {}) {
+  async function request(path, { method = "GET", credential, signal, pendingCode, headers = {}, body = {} } = {}) {
     const url = new URL(path, ORIGIN);
     if (url.origin !== ORIGIN || url.username || url.password) throw new WorkbuddyError("endpoint", "Untrusted WorkBuddy endpoint.");
     const timed = AbortSignal.timeout(requestTimeoutMs);
@@ -104,7 +105,7 @@ export function createNativeClient({
     try {
       response = await fetchImpl(url, {
         method, redirect: "error", signal: activeSignal, headers: requestHeaders,
-        ...(method === "POST" ? { body: "{}" } : {}),
+        ...(method === "POST" ? { body: JSON.stringify(body) } : {}),
       });
     } catch {
       if (signal?.aborted) throw new WorkbuddyError("cancelled", "WorkBuddy operation cancelled or timed out.");
@@ -178,6 +179,36 @@ export function createNativeClient({
     },
     async catalog(credential, signal) {
       return request("/v3/config", { credential, signal });
+    },
+    async credits(credential, signal) {
+      accountHeaders(credential);
+      if (credential.enterpriseId) {
+        throw new WorkbuddyError("credits-scope", "The verified credits route supports personal accounts only.");
+      }
+      return request("/billing/meter/get-user-resource-summary", { method: "POST", credential, signal });
+    },
+    async creditPackages(credential, signal, summary) {
+      accountHeaders(credential);
+      if (credential.enterpriseId) throw new WorkbuddyError("credits-scope", "Credit-package details support personal accounts only.");
+      const deadline = AbortSignal.timeout(requestTimeoutMs);
+      const activeSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
+      try {
+        return await readCreditPackages({ summary, signal: activeSignal,
+          fetchPage: (group, body) => {
+            const today = new Date(now()), pad = value => String(value).padStart(2, "0");
+            const day = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+            return request("/billing/meter/get-user-resource-" + group + "-packages", {
+              method: "POST", credential, signal: activeSignal, headers: { "Accept-Language": "en" },
+              body: { ...body, ...(group === "paid" ? { NeedRenewInfo: true } : {
+                SlicePeriodStartTime: day + " 00:00:00", SlicePeriodEndTime: day + " 23:59:59",
+              }) },
+            });
+          },
+        });
+      } catch {
+        if (signal?.aborted) throw new WorkbuddyError("cancelled", "WorkBuddy credit read cancelled.");
+        return { accounts: [], state: "unavailable" };
+      }
     },
   };
 }

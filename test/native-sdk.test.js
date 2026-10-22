@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createWorkbuddyProvider } from "../src/native-provider.js";
 import { registerNativeLifecycle } from "../src/native-lifecycle.js";
+import { registerPendantTooltip } from "../src/native-tooltip-controller.js";
 
 // Optional integration against Pendant's actual shipped SDK, using synthetic auth and mock catalogs only.
 const bundle = process.env.PI_SDK_TEST_PATH;
@@ -76,4 +77,32 @@ sdkTest("Pendant SDK: actual session_start replaces the active fallback and rest
       assert.deepEqual(available.map(model => model.id), ["default-model", "deepseek-v4.1-flash"]);
     } finally { session?.dispose(); rmSync(dir, { recursive: true, force: true }); }
   }
+});
+
+sdkTest("Pendant SDK: tooltip relay uses native Pi auth/status APIs without a worker protocol change", async () => {
+  const s=setup(), dir=mkdtempSync(join(tmpdir(),"pi-workbuddy-tooltip-test-")); let session; const statuses=[]; let reads=0;
+  try {
+    const runtime=await s.makeRuntime();
+    const services=await s.host.createAgentSessionServices({cwd:dir,agentDir:dir,modelRuntime:runtime,
+      settingsManager:s.host.SettingsManager.inMemory({defaultProvider:"workbuddy",defaultModel:"default-model"}),
+      resourceLoaderOptions:{noExtensions:true,noSkills:true,noThemes:true,noContextFiles:true,noPromptTemplates:true,
+        extensionFactories:[pi=>{const provider=s.makeProvider();pi.registerProvider(provider);
+          registerPendantTooltip(pi,{enabled:true,reader:{clear(){},async read(credential){
+            reads++;assert.equal(credential.access,"SYNTHETIC_ACCESS");assert.equal(credential.userId,"mock-user");
+            return {creditsTotal:125,creditsRemaining:90,creditsUsed:35,packageCount:2,fetchedAt:1000,source:"remote",stale:false,
+              packageDetails:{state:"complete",count:2,items:[
+                {kind:"base",total:100,remaining:80,used:20,expiresAt:Date.UTC(2030,4,1),expiresText:null,ResourceId:"PRIVATE"},
+                {kind:"bonus",total:25,remaining:10,used:15,expiresAt:Date.UTC(2030,5,1),expiresText:null,AccountId:"PRIVATE"},
+              ]}};
+          }}});
+        }]},
+    });
+    ({session}=await s.host.createAgentSessionFromServices({services,sessionManager:s.host.SessionManager.inMemory(dir),noTools:"all"}));
+    await session.bindExtensions({mode:"rpc",uiContext:{setStatus(_key,value){statuses.push(value===undefined?undefined:JSON.parse(value));},notify(){}}});
+    assert.equal(reads,1);assert.equal(statuses.at(-1).state,"ready");
+    assert.equal(statuses.at(-1).sessionId,session.sessionManager.getSessionId());
+    assert.equal(statuses.at(-1).packageDetails.items.length,2);
+    assert.equal(statuses.at(-1).packageDetails.items[1].expiresAt,Date.UTC(2030,5,1));
+    assert.doesNotMatch(JSON.stringify(statuses),/SYNTHETIC|mock-user|Authorization|PRIVATE|ResourceId|AccountId/);
+  } finally {session?.dispose();rmSync(dir,{recursive:true,force:true});}
 });
