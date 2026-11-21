@@ -3,6 +3,8 @@
 A **WorkBuddy AI** provider for [Pi](https://pi.dev), with browser-based account login and direct model access—**no separate bridge required**.
 
 > **Experimental and unofficial.** Built from static inspection of WorkBuddy AI 5.8.4. A user has successfully completed browser login and a basic live conversation with `deepseek-v4.1-flash`. Tool calling, image input, and long-running token refresh have not yet been verified against the live service. Automated tests use synthetic credentials and responses, including Pi's built-in streaming implementation.
+>
+> WorkBuddy rejected live probes of both Hy4 Flash variants with HTTP 400 / business code 11128 (channel validation). A model appearing in the catalog, including one with a credit or promotion label, does not confirm live chat access through this package.
 
 ## Getting started
 
@@ -51,21 +53,23 @@ Use `/reload` after updating a loaded extension. To sign out, run `/logout` and 
 | `/workbuddy-tooltip on/off/refresh/status` | Experimental opt-in credit relay; requires the separately reviewed Pendant host adapter |
 | `/model` | Refresh model catalogs in the background and select a model |
 
-Before discovery or cache restoration, the provider includes fallback metadata for `default-model`. Models are not available until authentication is configured. Successful catalogs are persisted through **Pi's model store** as projected public metadata, scoped by a hash of the account origin/user/domain/tenant (never access or refresh tokens). Cached models are revalidated on restoration, including removal of DeepSeek `-sg` variants. A failed refresh retains the last known catalog. The extension factory itself makes no network requests.
+Before discovery or cache restoration, the provider includes fallback metadata for `default-model`. Models are not available until authentication is configured. Successful catalogs are persisted through **Pi's model store** as projected public metadata, scoped by a hash of the account origin/user/domain/tenant (never access or refresh tokens). Cached models are revalidated on restoration. A failed refresh retains the last known catalog. The extension factory itself makes no network requests.
 
 ### Automatic model discovery
 
 There is no hardcoded allowlist of WorkBuddy model IDs. The provider fetches `/v3/config` with the signed-in account and projects compatible model entries into Pi. In Pi 1.3.0, opening `/model` refreshes provider catalogs in the background and updates the picker when discovery finishes. Pi also refreshes catalogs after login; `/workbuddy refresh` is the explicit manual override.
 
-A newly advertised model can therefore appear without changing the extension or adding its ID manually. The model must pass the existing compatibility and security filters: disabled models, models explicitly lacking tool support, and custom endpoints/protocols/API keys are excluded. Starting with 0.2.2, DeepSeek variants ending in `-sg` are intentionally excluded, including after catalog refresh; the regular DeepSeek models remain available. Catalog visibility does not guarantee that your account can run every listed model.
+A newly advertised model can therefore appear without changing the extension or adding its ID manually. The model must pass the existing compatibility and security filters: disabled models, models explicitly lacking tool support, and custom endpoints/protocols/API keys are excluded. DeepSeek models keep the exact IDs advertised by WorkBuddy, including any `-sg` suffix. Catalog visibility does not guarantee that your account can run every listed model.
 
 A `session_start` hook refreshes only WorkBuddy using the registry's default network policy and honors `PI_OFFLINE` (also set by Pi CLI `--offline`). This covers embedded hosts that re-register a provider but do not refetch an already-seen provider ID. Offline provider refreshes can restore a matching cached catalog without network access.
 
 This is refresh-based discovery, not a realtime push subscription or continuous idle polling. Reopen `/model` to check for additions during a long session. Extension updates may still be necessary if WorkBuddy changes its API, authentication, metadata schema, or wire protocol.
 
+The picker shows `Credit x…` for a positive catalog credit multiplier and `Pro Only` for an explicit Pro paywall. A verified zero-credit promotion shows `Free promo until … UTC` during its advertised window. Free promotions may have a separate allowance. Opening `/model` or refreshing the catalog updates the labels. Cached catalogs retain the credit and Pro labels and get temporary promo labels from live discovery.
+
 ### Pendant / VS Code stays on WorkBuddy Default (fallback)
 
-Version **0.2.3** restores cached catalogs after provider re-registration and refreshes WorkBuddy at session startup. It also replaces an active bootstrap fallback with fresh metadata for the same ID. For resumed sessions, it reads only the latest model-change record; a removed DeepSeek `-sg` selection is restored to its exact non-SG counterpart if available. It does not change another provider, overwrite a newer observed selection, edit global defaults, or send a chat request. `/workbuddy refresh` also repairs stale active-model metadata.
+The extension restores cached catalogs after provider re-registration and refreshes WorkBuddy at session startup. It also replaces an active bootstrap fallback with fresh metadata for the same ID. For resumed sessions, it uses the latest model-change record to restore the exact saved WorkBuddy model ID when available. It does not change another provider, overwrite a newer observed selection, edit global defaults, or send a chat request. `/workbuddy refresh` also repairs stale active-model metadata.
 
 After the 0.2.3 release is published, update the package used by the host and reload the session. Restarting an old installed copy will not pick up repository changes. `/workbuddy doctor` reports the loaded extension version and `catalog=fallback`, `cache`, or `remote`; share only this sanitized diagnostic, never credentials. A genuine network/authentication error with no usable cache still requires resolving the error; no fabricated catalog is substituted.
 
@@ -142,11 +146,17 @@ Transient failures may return last-good data with `stale: true` and a sanitized 
 
 This layer never performs login or token refresh itself: its caller must supply current Pi-owned credentials. It never claims rewards, buys credits, changes subscriptions, or sends chat. The enterprise usage route has not been verified and is deliberately not substituted with a potentially misleading personal balance; enterprise-scoped calls report unsupported for now. See [endpoint verification](research/credits-endpoint-verification.md) and [tooltip findings](research/model-tooltip-findings.md) for integration boundaries.
 
+### Automatic credit balance
+
+When WorkBuddy is the active model provider, the Pi footer shows the remaining personal-account credit balance. The extension reads the summary at session start, when selecting a WorkBuddy model, and after each turn. It clears the status when switching providers or closing the session. Set `WORKBUDDY_CREDIT_STATUS=0` in the host environment to disable the plain balance. Offline sessions skip the read.
+
+In Pendant, set `pendant.extensionStatus.surface` to `statusBar`, `panel`, or `both` once in VS Code Settings. If you use an extension status allowlist, include `workbuddy.balance`. The plain status needs no adapter and appears automatically in subsequent sessions.
+
 ### Optional Pendant credit tooltip (experimental)
 
 The exact native model-hover integration requires a host adapter in Pendant **0.41.0**, not just provider metadata. See [the preparation/review guide](integrations/pendant/README.md). The included `prepare.mjs` validates the inspected host version and hash, checks JavaScript syntax, and produces separate modified renderer/broker copies and a manifest. It **never applies** that copy to your installed VS Code extension. Generated vendor bundles are not shipped in npm or committed to Git.
 
-After an explicitly approved adapter installation, `/workbuddy-tooltip on` enables a session-scoped credit relay over Pi's normal status API. The adapter consumes that reserved payload inside the existing native model tooltip instead of displaying an extra status badge. `/workbuddy-tooltip refresh`, `status`, and `off` manage the relay. It is disabled by default; normal CLI behavior is unchanged. Do not enable it in an unpatched host. Persistent opt-in after installing the adapter uses `WORKBUDDY_PENDANT_TOOLTIP=1` in the host process environment.
+After an explicitly approved adapter installation, `/workbuddy-tooltip on` enables a session-scoped credit relay over Pi's normal status API. The adapter consumes that reserved payload inside the existing native model tooltip. `/workbuddy-tooltip refresh`, `status`, and `off` manage the detailed relay, which is disabled by default. Do not enable it in an unpatched host. Persistent opt-in after installing the adapter uses `WORKBUDDY_PENDANT_TOOLTIP=1` in the host process environment.
 
 Adapter v2 also fixes Pendant's default `extensionStatus.surface=off` transport gate: it forwards only the reserved WorkBuddy payload while leaving other status visibility and user settings unchanged. It hides the encoded transport from VS Code's separate status bar. Install both prepared host bundles and use **Developer: Reload Window**; Pi `/reload` alone does not reload the host broker. `/workbuddy-tooltip status` reports whether the relay payload is waiting, loading, ready, or unavailable without querying credits.
 
@@ -236,7 +246,7 @@ $env:PI_SDK_TEST_PATH = "C:/path/to/pendant/dist/pi-sdk.cjs"
 npm test
 ```
 
-Pendant integration tests instantiate its actual `ModelRuntime`, resource services, session manager, and `session_start` bindings. They cover provider re-registration, offline cache restoration in a fresh runtime, startup fallback repair, and migration of a saved DeepSeek SG selection. Cache tests cover account isolation, secret/endpoint stripping, malformed entries, failed refreshes, and generation rejection.
+Pendant integration tests instantiate its actual `ModelRuntime`, resource services, session manager, and `session_start` bindings. They cover provider re-registration, offline cache restoration in a fresh runtime, startup fallback repair, and restoration of a saved DeepSeek SG selection. Cache tests cover account isolation, secret/endpoint stripping, malformed entries, failed refreshes, and generation rejection.
 
 Host tests cover coordinated login, storage and refresh, tool-call/result round trips, reasoning, Unicode, usage tails, instrumentation, empty and truncated streams, errors, and cancellation. The CLI smoke test uses an offline temporary profile with synthetic credentials and removes it afterward. **None of these automated tests sends a prompt to the live WorkBuddy service.**
 

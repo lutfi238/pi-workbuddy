@@ -90,17 +90,12 @@ test("mandatory reasoning and effort-specific compatibility stay model-specific"
   assert.equal(project("kimi-k2.6").compat.thinkingFormat, "deepseek");
 });
 
-test("DeepSeek -sg variants are excluded without hiding regular or unrelated models", () => {
-  const excluded = ["deepseek-v4.1-flash-sg", "deepseek-future-v9-sg", "DEEPSEEK-V9-SG", "deepseek-sg"];
-  const kept = ["deepseek-v4.1-flash", "deepseek-future-v9", "hy3-sg", "deepseek-v4.1-flash-sg-preview"];
-  const models = projectModels({ models: [...excluded, ...kept].map(id => ({ id, supportsToolCall: true })) });
-  assert.deepEqual(models.map(model => model.id), kept);
-  assert.equal(models[0].contextWindow, 1048576);
-  assert.equal(models[0].thinkingLevelMap.max, "max");
-  assert.equal(getVendorCapabilities("deepseek-v4.1-flash-sg"), undefined);
-  assert.throws(() => projectModels({ models: excluded.map(id => ({ id })) }), error => {
-    assert.equal(error.diagnosticCode, "catalog-filtered");
-    assert.equal(error.details.excluded, excluded.length);
-    return true;
-  });
+test("an SG-only DeepSeek catalog retains the advertised ID, credit label and limits", () => {
+  const item = { id: "deepseek-v4.1-flash-sg", name: "DeepSeek V4.1 Flash",
+    supportsToolCall: true, credits: "x0.11", maxInputTokens: 262144 };
+  const models = projectModels({ models: [item, item] });
+  assert.deepEqual(models.map(model => model.id), [item.id]);
+  const [model] = models;
+  assert.equal(model.name, "DeepSeek V4.1 Flash [Credit x0.11]");
+  assert.equal(model.contextWindow, 262144);
 });

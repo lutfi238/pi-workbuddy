@@ -29,7 +29,7 @@ export function createWorkbuddyProvider({ api, client = createNativeClient(), fe
       options: {
         ...options, maxTokens: outputLimit, samplingParams: requestSampling,
         maxRetries: options.maxRetries ?? 0, timeoutMs: options.timeoutMs ?? 120000,
-        fetch: createChatFetch({ fetch: options.fetch ?? fetchImpl, gzip, sessionId: options.sessionId }),
+        fetch: createChatFetch({ fetch: options.fetch ?? fetchImpl, gzip, sessionId: options.sessionId, signal: options.signal }),
         async onPayload(payload, wireModel) {
           // Preserve Pi streamSimple's remaining-context clamp before invoking caller hooks.
           const bounded = capPayloadOutput(payload, outputLimit);

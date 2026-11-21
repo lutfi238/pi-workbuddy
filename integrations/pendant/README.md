@@ -1,5 +1,10 @@
 # Optional Pendant model-tooltip adapter (experimental)
 
+For an automatic plain credit balance, set `pendant.extensionStatus.surface` to
+`statusBar`, `panel`, or `both`. If you use a status-key allowlist, include
+`workbuddy.balance`. The plain credit balance uses Pendant's built-in status
+surface and works independently of this adapter.
+
 This integration prepares **WorkBuddy credit rows in Pendant's existing native
 model-hover grid**, without disguising credits as OpenAI five-hour/weekly limits.
 It is not an official Pendant API or an upstream-supported integration.

@@ -1,24 +1,61 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { registerPendantTooltip } from "../src/native-tooltip-controller.js";
+import { CREDIT_STATUS_KEY, registerPendantTooltip } from "../src/native-tooltip-controller.js";
 import { TOOLTIP_STATUS_KEY } from "../src/pendant-tooltip.js";
 
 const snapshot = () => ({ creditsTotal: 125, creditsRemaining: 90, creditsUsed: 35, packageCount: 2, fetchedAt: 1000, source: "remote", stale: false });
 const tick = () => new Promise(resolve => setImmediate(resolve));
-function setup({ enabled = false } = {}) {
-  const handlers = new Map(), statuses = [], notices = [], reads = []; let command, authCalls = 0;
+function setup({ enabled = false, showBalance = false } = {}) {
+  const handlers = new Map(), statuses = [], balances = [], notices = [], reads = []; let command, authCalls = 0;
   let read = async () => snapshot();
   const reader = { read(...args) { reads.push(args); return read(...args); }, clear() {} };
   const ctx = { mode: "rpc", model: { provider: "workbuddy", id: "deepseek-v4.1-flash" },
     sessionManager: { getSessionId: () => "session-1" },
-    ui: { setStatus: (key,text) => { assert.equal(key,TOOLTIP_STATUS_KEY); statuses.push(text === undefined ? undefined : JSON.parse(text)); }, notify: text => notices.push(text) },
+    ui: { setStatus: (key,text) => {
+      if (key === CREDIT_STATUS_KEY) balances.push(text);
+      else { assert.equal(key,TOOLTIP_STATUS_KEY); statuses.push(text === undefined ? undefined : JSON.parse(text)); }
+    }, notify: text => notices.push(text) },
     modelRegistry: { async getApiKeyAndHeaders(model) { authCalls++; assert.equal(model.provider,"workbuddy"); return { ok: true, apiKey:"SYNTHETIC_ACCESS", baseUrl:"https://www.workbuddy.ai/v2", headers:{"X-User-Id":"mock-user","X-Domain":"www.workbuddy.ai"} }; } },
   };
   const pi = { on(name,fn) { handlers.set(name,fn); }, registerCommand(name,config) { assert.equal(name,"workbuddy-tooltip"); command = config.handler; } };
-  const controller = registerPendantTooltip(pi,{reader,enabled});
-  return { ctx, controller, statuses, notices, reads, set read(fn) {read=fn;}, get authCalls(){return authCalls;},
+  const controller = registerPendantTooltip(pi,{reader,enabled,showBalance});
+  return { ctx, controller, statuses, balances, notices, reads, set read(fn) {read=fn;}, get authCalls(){return authCalls;},
     event: name => handlers.get(name)({},ctx), command: action => command(action,ctx) };
 }
+
+test("plain credit balance starts automatically in TUI and RPC, refreshes after a turn, and returns after reopening", async () => {
+  for (const mode of ["tui", "rpc"]) {
+    const s = setup({ showBalance: true });
+    s.ctx.mode = mode;
+    await s.event("session_start");
+    await s.controller.refresh(s.ctx);
+    assert.equal(s.balances.at(-1), "WorkBuddy credits: 90 left");
+    assert.deepEqual(s.statuses, []);
+    s.read = async () => ({ ...snapshot(), creditsRemaining: 0, stale: true });
+    await s.event("agent_end");
+    await s.controller.refresh(s.ctx);
+    assert.equal(s.reads.at(-1)[1].force, true);
+    assert.equal(s.balances.at(-1), "WorkBuddy credits: 0 left (stale)");
+    await s.event("session_shutdown");
+    assert.equal(s.balances.at(-1), undefined);
+    await s.event("session_start");
+    await s.controller.refresh(s.ctx);
+    assert.equal(s.balances.at(-1), "WorkBuddy credits: 0 left (stale)");
+    s.ctx.model = { provider: "other", id: "selected" };
+    await s.event("model_select");
+    assert.equal(s.balances.at(-1), undefined);
+  }
+});
+
+test("turning off the RPC tooltip keeps the plain credit balance", async () => {
+  const s = setup({ enabled: true, showBalance: true });
+  await s.event("session_start");
+  await s.controller.refresh(s.ctx);
+  assert.equal(s.statuses.at(-1).state, "ready");
+  await s.command("off");
+  assert.equal(s.statuses.at(-1), undefined);
+  assert.equal(s.balances.at(-1), "WorkBuddy credits: 90 left");
+});
 
 test("tooltip relay is silent and does no auth/network work until explicitly enabled", async () => {
   const s=setup(); await s.event("session_start"); await s.event("agent_end");

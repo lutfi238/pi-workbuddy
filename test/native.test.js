@@ -196,6 +196,26 @@ test("transport gzip, privacy/client headers and endpoint allowlist", async () =
   assert.equal(calls, 1);
 });
 
+test("chat transport retains caller cancellation when the SDK omits the signal", async () => {
+  const caller = new AbortController();
+  const started = Promise.withResolvers();
+  let calls = 0;
+  const fetch = createChatFetch({ signal: caller.signal, fetch: async (_url, { signal }) => {
+    calls++;
+    return new Promise((_, reject) => {
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      started.resolve();
+    });
+  } });
+  const send = () => fetch(ORIGIN + "/v2/chat/completions", { method: "POST", body: "{}" });
+  const pending = send();
+  await started.promise;
+  caller.abort();
+  await assert.rejects(pending, /request cancelled/);
+  await assert.rejects(send(), /request cancelled/);
+  assert.equal(calls, 1);
+});
+
 test("chat errors sanitize secrets and preserve retry/overflow classifications", async () => {
   for (const [status, code] of [[429, 12003], [400, "context_length_exceeded"]]) {
     const f = createChatFetch({ fetch: async () => new Response(JSON.stringify({ error: { code, message: "SECRET" } }), {

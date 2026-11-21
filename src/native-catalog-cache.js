@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { BASE_URL, ORIGIN } from "./native-client.js";
-import { projectModels } from "./native-models.js";
+import { projectModels, withoutPromotionLabel } from "./native-models.js";
 import { WorkbuddyError } from "./native-errors.js";
 
 /** Local cache validator only; never sent as an HTTP ETag. Tokens are not hashed or stored. */
@@ -19,7 +19,7 @@ export function restoreCatalog(entry, key) {
   }
   const models = entry.models.filter(model => model?.provider === "workbuddy" && model.api === "openai-completions" &&
     model.baseUrl === BASE_URL).map(model => ({
-    id: model.id, name: model.name,
+    id: model.id, name: typeof model.name === "string" ? withoutPromotionLabel(model.name) : undefined,
     maxInputTokens: model.contextWindow, maxOutputTokens: model.maxTokens,
     supportsReasoning: model.reasoning === true,
     supportsImages: Array.isArray(model.input) && model.input.includes("image"),
@@ -34,5 +34,5 @@ export function restoreCatalog(entry, key) {
 
 export function catalogCacheEntry(models, key) {
   // Models originate from projectModels(), which emits only bounded public metadata.
-  return { models, checkedAt: Date.now(), etag: key };
+  return { models: models.map(model => ({ ...model, name: withoutPromotionLabel(model.name) })), checkedAt: Date.now(), etag: key };
 }

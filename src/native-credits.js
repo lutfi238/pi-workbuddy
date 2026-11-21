@@ -63,7 +63,8 @@ function permitsStale(error) {
 }
 
 /** No timers, persistence, automatic login/refresh, or network work until read() is explicitly called. */
-export function createCreditsReader({ client = createNativeClient(), ttlMs = 60000, maxEntries = 8, now = Date.now } = {}) {
+export function createCreditsReader({ client = createNativeClient(), ttlMs = 60000, maxEntries = 8, now = Date.now,
+  includePackageDetails = true } = {}) {
   if (!Number.isSafeInteger(ttlMs) || ttlMs < 0 || !Number.isSafeInteger(maxEntries) || maxEntries < 1 || maxEntries > 128 ||
     typeof now !== "function" || typeof client?.credits !== "function") throw new Error("Invalid WorkBuddy credit-reader configuration.");
   const cache = new Map(), pending = new Map();
@@ -98,7 +99,7 @@ export function createCreditsReader({ client = createNativeClient(), ttlMs = 600
         if (job.controller.signal.aborted) throw cancelled();
         const metrics = normalizeCredits(raw, timestamp());
         let packageDetails;
-        if (typeof client.creditPackages === "function") {
+        if (includePackageDetails && typeof client.creditPackages === "function") {
           let details;
           try { details = await client.creditPackages(credential, job.controller.signal, raw); }
           catch { if (job.controller.signal.aborted) throw cancelled(); }

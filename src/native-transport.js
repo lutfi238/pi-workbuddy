@@ -55,7 +55,7 @@ export function normalizeSse(body) {
   }));
 }
 
-export function createChatFetch({ fetch: fetchImpl = globalThis.fetch, gzip = true, sessionId } = {}) {
+export function createChatFetch({ fetch: fetchImpl = globalThis.fetch, gzip = true, sessionId, signal: callerSignal } = {}) {
   const conversationId = sessionId || randomUUID();
   return async (input, init) => {
     const request = new Request(input, init);
@@ -79,14 +79,16 @@ export function createChatFetch({ fetch: fetchImpl = globalThis.fetch, gzip = tr
     if (gzip) headers.set("Content-Encoding", "gzip");
     else headers.delete("Content-Encoding");
     headers.delete("Content-Length");
+    const signal = callerSignal ? AbortSignal.any([callerSignal, request.signal]) : request.signal;
     let response;
     try {
+      signal.throwIfAborted();
       response = await fetchImpl(url, {
         method: "POST", headers, body: gzip ? gzipSync(body) : body,
-        redirect: "error", signal: request.signal,
+        redirect: "error", signal,
       });
     } catch {
-      throw new Error(request.signal.aborted ? "WorkBuddy request cancelled." : "WorkBuddy connection failed.");
+      throw new Error(signal.aborted ? "WorkBuddy request cancelled." : "WorkBuddy connection failed.");
     }
     if (!response.ok) {
       let code;

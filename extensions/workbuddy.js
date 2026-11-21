@@ -18,5 +18,6 @@ export default async function workbuddy(pi) {
   pi.registerProvider(provider);
   registerNativeCommands(pi, provider);
   registerNativeLifecycle(pi, provider);
-  registerPendantTooltip(pi, { enabled: process.env.WORKBUDDY_PENDANT_TOOLTIP === "1" });
+  registerPendantTooltip(pi, { enabled: process.env.WORKBUDDY_PENDANT_TOOLTIP === "1",
+    showBalance: process.env.WORKBUDDY_CREDIT_STATUS !== "0" });
 }

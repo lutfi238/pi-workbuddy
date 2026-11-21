@@ -6,7 +6,8 @@ import { fallbackModels, projectModels } from "../src/native-models.js";
 function setup(selected = fallbackModels()[0]) {
   let start, calls = 0, options, target;
   const notifications = [];
-  const catalog = projectModels({ models: [{ id: "default-model", name: "Default", maxInputTokens: 176000 }, { id: "deepseek-v4.1-flash" }] });
+  const catalog = projectModels({ models: [{ id: "default-model", name: "Default", maxInputTokens: 176000 },
+    { id: "deepseek-v4.1-flash" }, { id: "deepseek-v4.1-flash-sg" }] });
   const provider = { getModels: () => catalog };
   const pi = { on(name, handler) { assert.equal(name, "session_start"); start = handler; }, async setModel(model) { target = model; return true; } };
   const ctx = { model: selected, isIdle: () => true, ui: { notify: message => notifications.push(message) },
@@ -26,10 +27,10 @@ test("session startup refreshes the provider and replaces stale fallback metadat
   assert.equal(s.target.contextWindow, 176000);
 });
 
-test("a saved SG model selects its exact non-SG counterpart without inference", async () => {
+test("a saved SG model keeps its catalog ID when updating model metadata", async () => {
   const s = setup({ provider: "workbuddy", id: "deepseek-v4.1-flash-sg", name: "Old SG" });
   await s.start();
-  assert.equal(s.target.id, "deepseek-v4.1-flash");
+  assert.equal(s.target.id, "deepseek-v4.1-flash-sg");
 });
 
 test("startup never overrides another provider, a changed selection, or a running turn", async () => {
@@ -93,7 +94,7 @@ test("resume recovery uses the latest model choice, not an older SG history reco
       { type: "model_change", provider: "workbuddy", modelId: last },
     ] };
     await s.start();
-    assert.equal(s.target.id, last === "default-model" ? last : "deepseek-v4.1-flash");
+    assert.equal(s.target.id, last);
   }
 });
 

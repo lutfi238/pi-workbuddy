@@ -6,11 +6,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createWorkbuddyProvider } from "../src/native-provider.js";
 import { registerNativeLifecycle } from "../src/native-lifecycle.js";
-import { registerPendantTooltip } from "../src/native-tooltip-controller.js";
+import { CREDIT_STATUS_KEY, registerPendantTooltip } from "../src/native-tooltip-controller.js";
 
 // Optional integration against Pendant's actual shipped SDK, using synthetic auth and mock catalogs only.
 const bundle = process.env.PI_SDK_TEST_PATH;
-const sdkTest = (name, fn) => test(name, { skip: !bundle && "Set PI_SDK_TEST_PATH to Pendant's pi-sdk.cjs" }, fn);
+const sdkTest = (name, fn) => test(name, { timeout: 15000, skip: !bundle && "Set PI_SDK_TEST_PATH to Pendant's pi-sdk.cjs" }, fn);
 function setup() {
   const sdk = createRequire(import.meta.url)(bundle);
   const host = sdk["@earendil-works/pi-coding-agent"]();
@@ -21,8 +21,7 @@ function setup() {
   const api = { stream() { throw new Error("Inference prohibited"); }, streamSimple() { throw new Error("Inference prohibited"); } };
   const makeProvider = () => createWorkbuddyProvider({ api, client: { async catalog() { calls++; return { models: [
     { id: "default-model", name: "Default", maxInputTokens: 176000 },
-    { id: "deepseek-v4.1-flash", supportsToolCall: true },
-    { id: "deepseek-v4.1-flash-sg", supportsToolCall: true },
+    { id: "deepseek-v4.1-flash-sg", supportsToolCall: true, maxInputTokens: 262144 },
   ] }; } } });
   const entries = new Map();
   const modelsStore = { async read(id) { return structuredClone(entries.get(id)); },
@@ -42,7 +41,7 @@ sdkTest("Pendant SDK: provider re-registration and fresh runtimes retain offline
     assert.equal((await nextRuntime.refresh({ providers: ["workbuddy"], allowNetwork: false })).errors.size, 0);
     assert.equal(provider.getCatalogStatus().source, "cache");
     assert.deepEqual(nextRuntime.getModels().filter(model => model.provider === "workbuddy").map(model => model.id),
-      ["default-model", "deepseek-v4.1-flash"]);
+      ["default-model", "deepseek-v4.1-flash-sg"]);
   }
   assert.equal(s.calls, 1, "offline restoration must not call a catalog or chat endpoint");
   assert.doesNotMatch(JSON.stringify([...s.entries.values()]), /SYNTHETIC_ACCESS|SYNTHETIC_REFRESH|mock-user/);
@@ -70,24 +69,27 @@ sdkTest("Pendant SDK: actual session_start replaces the active fallback and rest
       assert.equal(s.calls, 0);
       await session.bindExtensions({ mode: "rpc" });
       assert.equal(s.calls, 1);
-      assert.equal(session.model.id, resume ? "deepseek-v4.1-flash" : "default-model");
+      assert.equal(session.model.id, resume ? "deepseek-v4.1-flash-sg" : "default-model");
       assert.notEqual(session.model.name, "WorkBuddy Default (fallback)");
-      assert.equal(session.model.contextWindow, resume ? 1048576 : 176000);
+      assert.equal(session.model.contextWindow, resume ? 262144 : 176000);
       const available = new s.host.ModelRegistry(runtime).getAvailable().filter(model => model.provider === "workbuddy");
-      assert.deepEqual(available.map(model => model.id), ["default-model", "deepseek-v4.1-flash"]);
+      assert.deepEqual(available.map(model => model.id), ["default-model", "deepseek-v4.1-flash-sg"]);
     } finally { session?.dispose(); rmSync(dir, { recursive: true, force: true }); }
   }
 });
 
-sdkTest("Pendant SDK: tooltip relay uses native Pi auth/status APIs without a worker protocol change", async () => {
-  const s=setup(), dir=mkdtempSync(join(tmpdir(),"pi-workbuddy-tooltip-test-")); let session; const statuses=[]; let reads=0;
+sdkTest("Pendant SDK: balance and tooltip use native Pi auth/status APIs", async () => {
+  const s=setup(), dir=mkdtempSync(join(tmpdir(),"pi-workbuddy-tooltip-test-"));
+  let session, reads=0;
+  const statuses=[], balances=[];
+  const ready=Promise.withResolvers();
   try {
     const runtime=await s.makeRuntime();
     const services=await s.host.createAgentSessionServices({cwd:dir,agentDir:dir,modelRuntime:runtime,
       settingsManager:s.host.SettingsManager.inMemory({defaultProvider:"workbuddy",defaultModel:"default-model"}),
       resourceLoaderOptions:{noExtensions:true,noSkills:true,noThemes:true,noContextFiles:true,noPromptTemplates:true,
         extensionFactories:[pi=>{const provider=s.makeProvider();pi.registerProvider(provider);
-          registerPendantTooltip(pi,{enabled:true,reader:{clear(){},async read(credential){
+          registerPendantTooltip(pi,{enabled:true,showBalance:true,reader:{clear(){},async read(credential){
             reads++;assert.equal(credential.access,"SYNTHETIC_ACCESS");assert.equal(credential.userId,"mock-user");
             return {creditsTotal:125,creditsRemaining:90,creditsUsed:35,packageCount:2,fetchedAt:1000,source:"remote",stale:false,
               packageDetails:{state:"complete",count:2,items:[
@@ -98,7 +100,16 @@ sdkTest("Pendant SDK: tooltip relay uses native Pi auth/status APIs without a wo
         }]},
     });
     ({session}=await s.host.createAgentSessionFromServices({services,sessionManager:s.host.SessionManager.inMemory(dir),noTools:"all"}));
-    await session.bindExtensions({mode:"rpc",uiContext:{setStatus(_key,value){statuses.push(value===undefined?undefined:JSON.parse(value));},notify(){}}});
+    await session.bindExtensions({mode:"rpc",uiContext:{setStatus(key,value){
+      if (key===CREDIT_STATUS_KEY) balances.push(value);
+      else {
+        const status=value===undefined?undefined:JSON.parse(value);
+        statuses.push(status);
+        if (status?.state==="ready") ready.resolve();
+      }
+    },notify(){}}});
+    await ready.promise;
+    assert.equal(balances.at(-1),"WorkBuddy credits: 90 left");
     assert.equal(reads,1);assert.equal(statuses.at(-1).state,"ready");
     assert.equal(statuses.at(-1).sessionId,session.sessionManager.getSessionId());
     assert.equal(statuses.at(-1).packageDetails.items.length,2);

@@ -16,13 +16,13 @@ export async function recoverSelectedModel(pi, provider, ctx, selected = ctx.mod
     const previous = ctx.sessionManager?.getBranch?.().findLast(entry => entry.type === "model_change");
     if (previous?.provider === "workbuddy" && typeof previous.modelId === "string") previousId = previous.modelId;
   }
-  const id = /^deepseek-/i.test(previousId) && /-sg$/i.test(previousId) ? previousId.slice(0, -3) : previousId;
-  const replacement = provider.getModels().find(model => model.id === id) ??
-    (placeholder ? provider.getModels().find(model => model.id === selected.id) : undefined);
+  const models = provider.getModels();
+  const replacement = models.find(model => model.id === previousId) ??
+    (placeholder ? models.find(model => model.id === selected.id) : undefined);
   if (!replacement || definition(selected) === definition(replacement)) return;
   if (await pi.setModel(replacement) === false) {
     ctx.ui?.notify?.("WorkBuddy catalog is ready; select an available model with /model.", "warning");
-  } else if (id !== selected.id && replacement.id === id) {
+  } else if (replacement.id !== selected.id) {
     ctx.ui?.notify?.("WorkBuddy restored the available model " + replacement.id + ". No chat request sent.", "info");
   }
 }

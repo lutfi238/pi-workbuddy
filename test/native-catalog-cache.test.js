@@ -26,16 +26,16 @@ test("cache identity is account/domain/tenant scoped and independent of tokens",
   assert.doesNotMatch(JSON.stringify(entry()), /SYNTHETIC_ACCESS|SYNTHETIC_REFRESH|mock-user/);
 });
 
-test("cache restoration reprojects capabilities and removes SG and untrusted fields", () => {
+test("cache restoration retains catalog IDs and removes untrusted fields", () => {
   const stored = entry();
   stored.models.unshift({ ...stored.models[0], id: "deepseek-v4.1-flash-sg" });
   stored.models[1] = { ...stored.models[1], headers: { Authorization: "PRIVATE" }, prompts: ["PRIVATE"], cost: { input: 100000 } };
   stored.models.push({ ...stored.models[1], id: "external", baseUrl: "https://evil.example" });
   const result = restoreCatalog(stored, catalogCacheKey(credential()));
-  assert.deepEqual(result.map(model => model.id), ["deepseek-v4.1-flash", "default-model"]);
-  assert.equal(result[0].contextWindow, 1048576);
-  assert.equal(result[0].thinkingLevelMap.max, "max");
-  assert.equal(result[0].cost.input, 0);
+  assert.deepEqual(result.map(model => model.id), ["deepseek-v4.1-flash-sg", "deepseek-v4.1-flash", "default-model"]);
+  assert.equal(result[1].contextWindow, 1048576);
+  assert.equal(result[1].thinkingLevelMap.max, "max");
+  assert.equal(result[1].cost.input, 0);
   assert.doesNotMatch(JSON.stringify(result), /PRIVATE|evil\.example|prompts/);
   assert.equal(restoreCatalog(stored, "wrong-account"), undefined);
   assert.throws(() => restoreCatalog({ ...stored, models: Array(2001).fill(stored.models[0]) }, stored.etag),
@@ -49,6 +49,31 @@ test("new provider instances restore an offline catalog without network or infer
   assert.equal(calls, 0);
   assert.equal(provider.getCatalogStatus().source, "cache");
   assert.deepEqual(provider.getModels().map(model => model.id), ["deepseek-v4.1-flash", "default-model"]);
+});
+
+test("picker labels follow catalog billing and do not cache a temporary free promotion", () => {
+  const config = {
+    models: [
+      { id: "promo", name: "Hy4 Flash", credits: "x0.00" },
+      { id: "regular", name: "Hy4 Flash", credits: "x0.03" },
+      { id: "locked", name: "Premium", credits: "x1.33 credits" },
+      { id: "unknown", credits: "x0.00" },
+    ],
+    modelTiers: [{ enabled: true, accessMode: "paywall", requiredUserType: "standard",
+      badge: { labelEn: "Pro Only" }, modelIds: ["locked"] }],
+    modelPromotions: [{ enabled: true, kind: "discount", discount: { factor: 0 }, modelIds: ["promo"],
+      schedule: { validFrom: "2026-11-16T00:00:00+08:00", validUntil: "2026-12-01T00:00:00+08:00" } }],
+  };
+  const active = projectModels(config, Date.parse("2026-11-21T00:00:00Z"));
+  const names = active.map(model => model.name);
+  assert.deepEqual(names, ["Hy4 Flash [Free promo until 2026-11-30 16:00 UTC]",
+    "Hy4 Flash [Credit x0.03]", "Premium [Pro Only] [Credit x1.33]", "unknown"]);
+  const key = catalogCacheKey(credential());
+  const cached = catalogCacheEntry(active, key);
+  assert.doesNotMatch(JSON.stringify(cached), /Free promo/);
+  const expired = projectModels(config, Date.parse("2026-11-30T16:00:00Z"));
+  assert.equal(expired[0].name, "Hy4 Flash");
+  assert.deepEqual(restoreCatalog(cached, key).map(model => model.name), expired.map(model => model.name));
 });
 
 test("remote publication persists only projected metadata and never raw server fields", async () => {
@@ -71,8 +96,8 @@ test("failed online refresh retains restored models and a sanitized error", asyn
   assert.doesNotMatch(provider.getCatalogStatus().lastError, /PRIVATE_TOKEN/);
 });
 
-test("malformed and obsolete SG-only caches cannot block online recovery", async () => {
-  for (const stored of [{ ...entry(), models: [] }, { ...entry(), models: [{ ...models()[0], id: "deepseek-v4.1-flash-sg" }] }]) {
+test("empty and invalid caches cannot block online recovery", async () => {
+  for (const stored of [{ ...entry(), models: [] }, { ...entry(), models: [{ ...models()[0], id: "" }] }]) {
     let calls = 0;
     const provider = createWorkbuddyProvider({ api, client: { async catalog() { calls++; return { models: [{ id: "recovered" }] }; } } });
     await provider.refreshModels(context({ allowNetwork: true, stored }));
