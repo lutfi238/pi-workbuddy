@@ -1,5 +1,5 @@
 import { createNativeClient, accountHeaders, BASE_URL } from "./native-client.js";
-import { fallbackModels, projectModels } from "./native-models.js";
+import { fallbackModels, getModelBilling, projectModels } from "./native-models.js";
 import { createChatFetch } from "./native-transport.js";
 import { describeFailure } from "./native-errors.js";
 import { resolveOutputLimit, capPayloadOutput } from "./native-limits.js";
@@ -98,12 +98,43 @@ export function createWorkbuddyProvider({ api, client = createNativeClient(), fe
   };
 }
 
+async function showModelDetails(ctx, provider, id) {
+  if (!id) {
+    const options = new Map(provider.getModels().map(model => [
+      model.name === model.id ? model.id : model.name + " (" + model.id + ")", model.id,
+    ]));
+    const selected = await ctx.ui.select("WorkBuddy model details", [...options.keys()]);
+    if (selected === undefined) return;
+    id = options.get(selected);
+  }
+  const model = provider.getModels().find(model => model.id === id);
+  if (!model) {
+    ctx.ui.notify("Model is unavailable in the WorkBuddy catalog. Use /workbuddy model to browse.", "warning");
+    return;
+  }
+  const { multiplier, proOnly, freeUntil } = getModelBilling(model) ?? {};
+  const details = [];
+  if (proOnly) details.push("Pro Only");
+  if (freeUntil > Date.now()) {
+    const end = new Date(freeUntil).toISOString().slice(0, 16).replace("T", " ");
+    details.push("Free promo until " + end + " UTC, subject to the promo allowance");
+  } else if (multiplier) {
+    details.push("Credit multiplier x" + multiplier);
+  } else {
+    details.push("No current credit rate in the catalog");
+  }
+  ctx.ui.notify(model.name + " (" + model.id + ") — " + details.join(" · "), "info");
+}
+
 export function registerNativeCommands(pi, provider) {
   pi.registerCommand("workbuddy", {
-    description: "Native WorkBuddy provider: status/doctor (local) or refresh model catalog",
+    description: "WorkBuddy status, catalog refresh, or model billing details",
     handler: async (args, ctx) => {
       const action = args.trim() || "status";
-      if (action === "status" || action === "doctor") {
+      const modelDetails = /^model(?:\s+(\S+))?$/.exec(action);
+      if (modelDetails) {
+        await showModelDetails(ctx, provider, modelDetails[1]);
+      } else if (action === "status" || action === "doctor") {
         const ready = ctx.modelRegistry.hasConfiguredAuth(provider.getModels()[0]);
         const catalog = provider.getCatalogStatus?.();
         const active = ctx.model ? ctx.model.provider + "/" + ctx.model.id : "unknown";
@@ -134,7 +165,7 @@ export function registerNativeCommands(pi, provider) {
             (ctx.signal?.aborted ? "[cancelled] Operation cancelled." : describeFailure(error)) +
             " Existing catalog retained. No chat request sent.", "warning");
         }
-      } else ctx.ui.notify("Usage: /workbuddy [status|doctor|refresh]. Sign in using /login.", "warning");
+      } else ctx.ui.notify("Usage: /workbuddy [status|doctor|refresh|model [id]]. Sign in using /login.", "warning");
     },
   });
 }

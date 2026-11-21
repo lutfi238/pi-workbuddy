@@ -6,12 +6,24 @@ const COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 const LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"];
 const validId = value => typeof value === "string" && value.length <= 256 && /^[\w./:-]+$/.test(value);
 
-const promoSuffix = / \[Free promo until \d{4}-\d\d-\d\d \d\d:\d\d UTC\]$/;
-export const withoutPromotionLabel = name => name?.replace(promoSuffix, "");
+const billingByModel = new WeakMap();
+export const getModelBilling = model => billingByModel.get(model);
+
+export function setModelBilling(model, { multiplier, proOnly, freeUntil } = {}) {
+  const hasMultiplier = typeof multiplier === "string" && /^\d{1,6}(?:\.\d{1,6})?$/.test(multiplier) && Number(multiplier) > 0;
+  if (hasMultiplier || proOnly === true || freeUntil !== undefined) {
+    billingByModel.set(model, Object.freeze({
+      ...(hasMultiplier ? { multiplier } : {}),
+      ...(proOnly === true ? { proOnly: true } : {}),
+      ...(freeUntil !== undefined ? { freeUntil } : {}),
+    }));
+  }
+}
+
 const zonedDate = value => typeof value === "string" &&
   /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?(?:Z|[+-]\d\d:\d\d)$/.test(value) ? Date.parse(value) : NaN;
 
-function billingLabels(config, now) {
+function billingRules(config, now) {
   const pro = new Set();
   for (const tier of Array.isArray(config.modelTiers) ? config.modelTiers : []) {
     if (tier?.enabled !== true || tier.accessMode !== "paywall" || tier.requiredUserType !== "standard" ||
@@ -39,7 +51,7 @@ export function projectModels(config, now = Date.now()) {
   const available = Array.isArray(config.availableModels) && config.availableModels.length ? new Set(config.availableModels) : undefined;
   const seen = new Set();
   const models = [];
-  const { pro, freeUntil } = billingLabels(config, now);
+  const { pro, freeUntil } = billingRules(config, now);
   const counts = { total: config.models.length, accepted: 0, invalid: 0, duplicate: 0,
     disabled: 0, toolLess: 0, endpoint: 0, unavailable: 0 };
   for (const item of config.models) {
@@ -63,18 +75,8 @@ export function projectModels(config, now = Date.now()) {
     } : undefined;
     const name = typeof item.name === "string" ? item.name.slice(0, 256) : item.id;
     const credits = typeof item.credits === "string" ? /^x(\d{1,6}(?:\.\d{1,6})?)(?: credits)?$/i.exec(item.credits.trim())?.[1] : undefined;
-    const until = freeUntil.get(item.id);
-    const labels = [];
-    if (pro.has(item.id)) labels.push(" [Pro Only]");
-    if (until !== undefined) {
-      const end = new Date(until).toISOString().slice(0, 16).replace("T", " ");
-      labels.push(" [Free promo until " + end + " UTC]");
-    } else if (Number(credits) > 0) {
-      labels.push(" [Credit x" + credits + "]");
-    }
-    const suffix = labels.join("");
-    models.push({
-      id: item.id, name: name.slice(0, 256 - suffix.length) + suffix,
+    const model = {
+      id: item.id, name,
       provider: "workbuddy", api: "openai-completions", baseUrl: BASE_URL,
       // Prefer availability: retain gateway image support even when the vendor is text-only,
       // and expose vendor-advertised image support even if gateway metadata omits/disables it.
@@ -90,7 +92,9 @@ export function projectModels(config, now = Date.now()) {
         supportsReasoningEffort: reasoning && (vendor.supportsReasoningEffort !== false || catalogEfforts.length > 0),
         ...(vendor.thinkingFormat ? { thinkingFormat: vendor.thinkingFormat } : {}),
       },
-    });
+    };
+    setModelBilling(model, { multiplier: credits, proOnly: pro.has(item.id), freeUntil: freeUntil.get(item.id) });
+    models.push(model);
   }
   if (!models.length) throw new WorkbuddyError(config.models.length ? "catalog-filtered" : "catalog-empty",
     "WorkBuddy returned no supported tool-capable models. Existing catalog retained.", counts);

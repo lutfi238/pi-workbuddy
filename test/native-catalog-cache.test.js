@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { catalogCacheKey, catalogCacheEntry, restoreCatalog } from "../src/native-catalog-cache.js";
 import { createWorkbuddyProvider } from "../src/native-provider.js";
-import { projectModels } from "../src/native-models.js";
+import { getModelBilling, projectModels } from "../src/native-models.js";
 
 const credential = () => ({ type: "oauth", origin: "https://www.workbuddy.ai", userId: "mock-user",
   access: "SYNTHETIC_ACCESS", refresh: "SYNTHETIC_REFRESH", expires: Date.now() + 3600000 });
@@ -51,7 +51,7 @@ test("new provider instances restore an offline catalog without network or infer
   assert.deepEqual(provider.getModels().map(model => model.id), ["deepseek-v4.1-flash", "default-model"]);
 });
 
-test("picker labels follow catalog billing and do not cache a temporary free promotion", () => {
+test("billing details stay separate from model names and do not cache a temporary promotion", () => {
   const config = {
     models: [
       { id: "promo", name: "Hy4 Flash", credits: "x0.00" },
@@ -66,14 +66,23 @@ test("picker labels follow catalog billing and do not cache a temporary free pro
   };
   const active = projectModels(config, Date.parse("2026-11-21T00:00:00Z"));
   const names = active.map(model => model.name);
-  assert.deepEqual(names, ["Hy4 Flash [Free promo until 2026-11-30 16:00 UTC]",
-    "Hy4 Flash [Credit x0.03]", "Premium [Pro Only] [Credit x1.33]", "unknown"]);
+  assert.deepEqual(names, ["Hy4 Flash", "Hy4 Flash", "Premium", "unknown"]);
+  assert.deepEqual(active.map(getModelBilling), [
+    { freeUntil: Date.parse("2026-11-30T16:00:00Z") }, { multiplier: "0.03" },
+    { proOnly: true, multiplier: "1.33" }, undefined,
+  ]);
   const key = catalogCacheKey(credential());
   const cached = catalogCacheEntry(active, key);
-  assert.doesNotMatch(JSON.stringify(cached), /Free promo/);
+  assert.doesNotMatch(JSON.stringify(cached), /freeUntil/);
   const expired = projectModels(config, Date.parse("2026-11-30T16:00:00Z"));
-  assert.equal(expired[0].name, "Hy4 Flash");
-  assert.deepEqual(restoreCatalog(cached, key).map(model => model.name), expired.map(model => model.name));
+  assert.equal(getModelBilling(expired[0]), undefined);
+  const restored = restoreCatalog(cached, key);
+  assert.deepEqual(restored.map(model => model.name), names);
+  assert.deepEqual(restored.map(getModelBilling), expired.map(getModelBilling));
+  const legacy = { etag: key, models: [{ ...active[2], name: "Premium [Pro Only] [Credit x1.33]" }] };
+  const [oldModel] = restoreCatalog(legacy, key);
+  assert.equal(oldModel.name, "Premium");
+  assert.deepEqual(getModelBilling(oldModel), { proOnly: true, multiplier: "1.33" });
 });
 
 test("remote publication persists only projected metadata and never raw server fields", async () => {

@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createWorkbuddyProvider } from "../src/native-provider.js";
+import { getModelBilling } from "../src/native-models.js";
 import { registerNativeLifecycle } from "../src/native-lifecycle.js";
 import { CREDIT_STATUS_KEY, registerPendantTooltip } from "../src/native-tooltip-controller.js";
 
@@ -21,7 +22,7 @@ function setup() {
   const api = { stream() { throw new Error("Inference prohibited"); }, streamSimple() { throw new Error("Inference prohibited"); } };
   const makeProvider = () => createWorkbuddyProvider({ api, client: { async catalog() { calls++; return { models: [
     { id: "default-model", name: "Default", maxInputTokens: 176000 },
-    { id: "deepseek-v4.1-flash-sg", supportsToolCall: true, maxInputTokens: 262144 },
+    { id: "deepseek-v4.1-flash-sg", supportsToolCall: true, maxInputTokens: 262144, credits: "x0.11" },
   ] }; } } });
   const entries = new Map();
   const modelsStore = { async read(id) { return structuredClone(entries.get(id)); },
@@ -40,6 +41,7 @@ sdkTest("Pendant SDK: provider re-registration and fresh runtimes retain offline
     const provider = s.makeProvider(); nextRuntime.registerNativeProvider(provider);
     assert.equal((await nextRuntime.refresh({ providers: ["workbuddy"], allowNetwork: false })).errors.size, 0);
     assert.equal(provider.getCatalogStatus().source, "cache");
+    assert.equal(getModelBilling(provider.getModels()[1]).multiplier, "0.11");
     assert.deepEqual(nextRuntime.getModels().filter(model => model.provider === "workbuddy").map(model => model.id),
       ["default-model", "deepseek-v4.1-flash-sg"]);
   }

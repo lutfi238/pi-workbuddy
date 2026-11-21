@@ -240,3 +240,25 @@ test("status is local and refresh requires configured login", async () => {
   assert.match(notices[0][0], /not logged in/);
   assert.match(notices[1][0], /Sign in/);
 });
+
+test("model details can be browsed or opened by ID without switching models", async () => {
+  const models = projectModels({ models: [
+    { id: "standard", name: "Hy4 Flash", credits: "x0.03" }, { id: "promo", name: "Hy4 Flash" },
+  ] });
+  const selected = { id: "other-model", provider: "other" };
+  const notices = [];
+  let command;
+  const ctx = { model: selected, ui: {
+    async select(_title, options) {
+      assert.deepEqual(options, ["Hy4 Flash (standard)", "Hy4 Flash (promo)"]);
+      return options[0];
+    },
+    notify(message) { notices.push(message); },
+  } };
+  registerNativeCommands({ registerCommand(_name, config) { command = config; } }, { getModels: () => models });
+  await command.handler("model", ctx);
+  await command.handler("model promo", ctx);
+  assert.match(notices[0], /Credit multiplier x0\.03/);
+  assert.match(notices[1], /No current credit rate/);
+  assert.equal(ctx.model, selected);
+});

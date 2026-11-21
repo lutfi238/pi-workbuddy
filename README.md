@@ -50,6 +50,7 @@ Use `/reload` after updating a loaded extension. To sign out, run `/logout` and 
 | `/logout` → WorkBuddy AI | Remove Pi's local WorkBuddy credentials |
 | `/workbuddy status` or `/workbuddy doctor` | Show local configuration, catalog source, active model, and the last sanitized catalog error; no network requests |
 | `/workbuddy refresh` | Fetch the authenticated catalog, refreshing the token if needed |
+| `/workbuddy model [id]` | Browse WorkBuddy model details, or look up an exact model ID |
 | `/workbuddy-tooltip on/off/refresh/status` | Experimental opt-in credit relay; requires the separately reviewed Pendant host adapter |
 | `/model` | Refresh model catalogs in the background and select a model |
 
@@ -65,7 +66,7 @@ A `session_start` hook refreshes only WorkBuddy using the registry's default net
 
 This is refresh-based discovery, not a realtime push subscription or continuous idle polling. Reopen `/model` to check for additions during a long session. Extension updates may still be necessary if WorkBuddy changes its API, authentication, metadata schema, or wire protocol.
 
-The picker shows `Credit x…` for a positive catalog credit multiplier and `Pro Only` for an explicit Pro paywall. A verified zero-credit promotion shows `Free promo until … UTC` during its advertised window. Free promotions may have a separate allowance. Opening `/model` or refreshing the catalog updates the labels. Cached catalogs retain the credit and Pro labels and get temporary promo labels from live discovery.
+The `/model` picker uses the original model names from WorkBuddy. Run `/workbuddy model` to choose a model and inspect its reported credit multiplier, Pro paywall, or active free promotion. Use `/workbuddy model <id>` to open details directly. The command reads the current catalog locally and leaves the selected chat model in place. Free promotions may have a separate allowance. Cached catalogs retain credit and Pro details. Live discovery supplies temporary promotions.
 
 ### Pendant / VS Code stays on WorkBuddy Default (fallback)
 

@@ -96,6 +96,6 @@ test("an SG-only DeepSeek catalog retains the advertised ID, credit label and li
   const models = projectModels({ models: [item, item] });
   assert.deepEqual(models.map(model => model.id), [item.id]);
   const [model] = models;
-  assert.equal(model.name, "DeepSeek V4.1 Flash [Credit x0.11]");
+  assert.equal(model.name, "DeepSeek V4.1 Flash");
   assert.equal(model.contextWindow, 262144);
 });
